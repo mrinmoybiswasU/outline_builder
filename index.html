@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OBE Course Outline Builder · CSE, UITS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ===================== HEADER ===================== -->
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 48 48" width="34" height="34">
+          <polygon points="24,4 44,14 24,24 4,14" fill="var(--gold)"/>
+          <polygon points="24,24 44,14 44,30 24,40" fill="var(--navy-700)"/>
+          <polygon points="24,24 4,14 4,30 24,40" fill="var(--navy-500)"/>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <span class="brand-line1">University of Information Technology &amp; Sciences</span>
+        <span class="brand-line2">Dept. of Computer Science &amp; Engineering — OBE Course Outline Builder</span>
+      </div>
+    </div>
+    <div class="header-actions">
+      <span class="badge-code" id="headerCourseCode">Untitled Outline</span>
+    </div>
+  </header>
+
+  <div class="app-body">
+
+    <!-- ===================== SIDEBAR / TABS ===================== -->
+    <nav class="tabs-rail" aria-label="Course outline sections">
+      <ol class="tabs-list" id="tabsList"><!-- populated by JS --></ol>
+
+      <div class="rail-footer">
+        <div class="ring-wrap">
+          <svg viewBox="0 0 64 64" class="ring-svg">
+            <circle cx="32" cy="32" r="27" class="ring-track"/>
+            <circle cx="32" cy="32" r="27" class="ring-fill" id="ringFill"/>
+          </svg>
+          <div class="ring-label">
+            <span id="ringPercent">0%</span>
+            <small>complete</small>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <!-- ===================== MAIN CONTENT ===================== -->
+    <main class="content">
+      <section class="panel" id="panel-info" data-panel="info"></section>
+      <section class="panel" id="panel-skill" data-panel="skill"></section>
+      <section class="panel" id="panel-teaching" data-panel="teaching"></section>
+      <section class="panel" id="panel-assessment" data-panel="assessment"></section>
+      <section class="panel" id="panel-references" data-panel="references"></section>
+      <section class="panel" id="panel-additional" data-panel="additional"></section>
+    </main>
+  </div>
+
+  <!-- ===================== BOTTOM STATIC TOOLBAR ===================== -->
+  <footer class="toolbar">
+    <div class="toolbar-status">
+      <div class="mini-progress" title="Overall completion">
+        <div class="mini-progress-track">
+          <div class="mini-progress-fill" id="miniProgressFill"></div>
+        </div>
+        <span class="mini-progress-text"><strong id="miniProgressPercent">0%</strong> complete</span>
+      </div>
+      <span class="toolbar-divider" aria-hidden="true"></span>
+      <span class="autosave-note" id="autosaveNote">All changes kept in this session</span>
+    </div>
+
+    <div class="toolbar-actions">
+      <button class="tbtn" id="btnReset" type="button" title="Clear all fields and start over">
+        <svg viewBox="0 0 20 20" width="16" height="16"><path fill="currentColor" d="M10 3a7 7 0 1 0 6.32 4H14.4A5 5 0 1 1 10 5c1.3 0 2.48.5 3.36 1.32L11 8.68V3h6.68l-2.1 2.1A6.98 6.98 0 0 0 10 3z"/></svg>
+        Reset
+      </button>
+      <label class="tbtn" id="btnLoadJson" title="Load a previously saved outline (.json)">
+        <svg viewBox="0 0 20 20" width="16" height="16"><path fill="currentColor" d="M10 2a1 1 0 0 1 1 1v8.59l2.3-2.3a1 1 0 1 1 1.4 1.42l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.42l2.3 2.3V3a1 1 0 0 1 1-1zM4 15a1 1 0 0 1 1 1v1h10v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1z"/></svg>
+        Load JSON
+        <input type="file" accept="application/json" id="fileLoadJson" hidden>
+      </label>
+      <button class="tbtn" id="btnDownloadJson" type="button" title="Download the raw outline data as JSON">
+        <svg viewBox="0 0 20 20" width="16" height="16"><path fill="currentColor" d="M5 4h6l4 4v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zm6 1.5V8h2.5L11 5.5z"/></svg>
+        Save JSON
+      </button>
+      <button class="tbtn" id="btnDownloadDocx" type="button" title="Generate a formatted Word document">
+        <svg viewBox="0 0 20 20" width="16" height="16"><path fill="currentColor" d="M4 2h8l4 4v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zm7.5 5.5H16L11.5 3v4.5zM6.3 10l1.1 5h1.1l.9-3.3.9 3.3h1.1l1.1-5h-1.2l-.6 3.2-.9-3.2H8.6l-.9 3.2-.6-3.2H6.3z"/></svg>
+        Download .docx
+      </button>
+      <button class="tbtn" id="btnDownloadPdf" type="button" title="Open a print-ready view to save as PDF">
+        <svg viewBox="0 0 20 20" width="16" height="16"><path fill="currentColor" d="M4 2h8l4 4v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zm7.5 5.5H16L11.5 3v4.5zM6 10.5h2.2c1.1 0 1.8.6 1.8 1.6s-.7 1.6-1.8 1.6H7v1.8H6v-5zm1 2.3h1c.5 0 .8-.2.8-.7s-.3-.7-.8-.7H7v1.4zm3.3-2.3H12c1.3 0 2.1.9 2.1 2.5s-.8 2.5-2.1 2.5h-1.7v-5zm1 4.1h.6c.7 0 1.1-.5 1.1-1.6s-.4-1.6-1.1-1.6h-.6v3.2z"/></svg>
+        Download PDF
+      </button>
+      <button class="tbtn tbtn-primary" id="btnPreview" type="button" title="Preview the full formatted outline">
+        <svg viewBox="0 0 20 20" width="16" height="16"><path fill="currentColor" d="M10 4c-4.4 0-7.6 3-9 6 1.4 3 4.6 6 9 6s7.6-3 9-6c-1.4-3-4.6-6-9-6zm0 10a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm0-1.8a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4z"/></svg>
+        Preview
+      </button>
+    </div>
+  </footer>
+</div>
+
+<!-- Hidden print root, populated at export time -->
+<div id="printRoot" class="print-root"></div>
+
+<!-- Floating portal for dropdown-checkbox panels (see ddCheckHTML / openDropdown) -->
+<div id="ddPortal" class="dd-portal"></div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/docx@8.5/build/index.umd.min.js"></script>
+<script src="state.js"></script>
+<script src="render.js"></script>
+<script src="export.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
