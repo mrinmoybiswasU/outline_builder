@@ -4,6 +4,8 @@ A static HTML/CSS/JS tool for building an Outcome-Based Education (OBE) course
 outline, matching the structure in *New Lab Course Outline — Database
 Management System Lab*.
 
+Access at: https://mrinmoybiswasU.github.io/outline_builder
+
 ## How to use it
 
 1. Open `index.html` in any modern browser (Chrome, Edge, Firefox). An internet
