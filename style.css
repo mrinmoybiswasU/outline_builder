@@ -213,6 +213,13 @@ a{color:var(--navy-500);}
   font-family:var(--font-mono);font-size:11px;background:var(--navy-100);color:var(--navy-700);
   border-radius:5px;padding:2px 7px;font-weight:700;
 }
+.help-btn{
+  width:20px;height:20px;border-radius:50%;border:1.4px solid var(--navy-300);background:#fff;color:var(--navy-500);
+  font-size:11.5px;font-weight:700;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+}
+.help-btn:hover{background:var(--navy-500);color:#fff;border-color:var(--navy-500);}
+table.obe-table th .help-btn{margin-left:6px;vertical-align:middle;text-transform:none;}
 
 /* form grid */
 .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px;}
@@ -347,6 +354,15 @@ table.obe-table tr:nth-child(even) td.cell-filled{background:var(--ok-bg) !impor
 .dd-check-option{display:flex;align-items:center;gap:8px;padding:5px 4px;font-size:12.8px;border-radius:5px;}
 .dd-check-option:hover{background:var(--navy-100);}
 .dd-check-option input{width:auto;flex-shrink:0;}
+.dd-option-disabled{opacity:.45;cursor:not-allowed;}
+.dd-option-disabled:hover{background:none;}
+.dd-option-disabled input{cursor:not-allowed;}
+.dd-note{
+  background:var(--navy-100);color:var(--navy-800);border-radius:6px;padding:7px 9px;
+  font-size:11.3px;line-height:1.45;margin-bottom:8px;
+}
+.dd-group-label{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--navy-500);padding:6px 4px 2px;}
+.dd-group-sep{border-top:1px solid var(--line);margin:6px 0;}
 .dd-check-custom{display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);}
 .dd-check-custom input{flex:1;font-size:12px;padding:5px 7px;}
 .dd-custom-warning{
@@ -436,6 +452,52 @@ table.obe-table tr:nth-child(even) td.cell-filled{background:var(--ok-bg) !impor
 .tbtn-primary{background:var(--navy-800);border-color:var(--navy-800);color:#fff;}
 .tbtn-primary:hover{background:var(--navy-900);}
 
+/* about / version icon + popover */
+.about-wrap{position:relative;display:flex;}
+.icon-btn{
+  width:22px;height:22px;border-radius:50%;border:1px solid var(--line);background:#fff;color:var(--ink-faint);
+  font-size:12px;font-weight:700;font-style:italic;font-family:Georgia,serif;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+}
+.icon-btn:hover{border-color:var(--navy-500);color:var(--navy-500);}
+.about-popover{
+  display:none;position:absolute;bottom:calc(100% + 10px);left:50%;transform:translateX(-50%);
+  background:var(--navy-900);color:#fff;padding:12px 16px;border-radius:10px;box-shadow:var(--shadow-lg);
+  white-space:nowrap;z-index:60;flex-direction:column;gap:3px;
+}
+.about-popover.open{display:flex;}
+.about-popover strong{font-size:12.8px;font-family:var(--font-display);}
+.about-popover span{font-size:11.5px;color:rgba(255,255,255,.75);}
+
+/* ===================== HELP MODAL (BAETE reference) ===================== */
+.help-modal{
+  display:none;position:fixed;inset:0;z-index:300;background:rgba(13,31,54,.45);
+  align-items:center;justify-content:center;padding:24px;
+}
+.help-modal.open{display:flex;}
+.help-modal-card{
+  background:#fff;border-radius:14px;max-width:640px;width:100%;max-height:80vh;
+  display:flex;flex-direction:column;box-shadow:var(--shadow-lg);
+}
+.help-modal-head{
+  display:flex;align-items:center;justify-content:space-between;padding:18px 22px;
+  border-bottom:1px solid var(--line-soft);
+}
+.help-modal-head h3{font-size:16px;color:var(--navy-900);margin:0;padding-right:16px;}
+.help-modal-x{
+  width:28px;height:28px;border-radius:50%;border:none;background:var(--paper);color:var(--ink-soft);
+  font-size:16px;cursor:pointer;flex-shrink:0;
+}
+.help-modal-x:hover{background:var(--navy-100);color:var(--navy-800);}
+.help-modal-body{padding:16px 22px 22px;overflow-y:auto;}
+.help-item{display:flex;gap:14px;padding:10px 0;border-bottom:1px solid var(--line-soft);}
+.help-item:last-child{border-bottom:none;}
+.help-item-code{
+  font-family:var(--font-mono);font-weight:700;font-size:12px;color:var(--navy-700);background:var(--navy-100);
+  border-radius:5px;padding:2px 8px;height:fit-content;flex-shrink:0;
+}
+.help-item-text{font-size:13px;line-height:1.55;color:var(--ink-soft);}
+
 /* ===================== TOAST ===================== */
 .toast{
   position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(20px);
@@ -450,31 +512,69 @@ table.obe-table tr:nth-child(even) td.cell-filled{background:var(--ok-bg) !impor
   body *{visibility:hidden;}
   .print-root, .print-root *{visibility:visible;}
   .print-root{display:block;position:absolute;top:0;left:0;width:100%;padding:0;margin:0;}
-  @page{ size:A4; margin:1.9cm 1.7cm 2.3cm 1.7cm; }
-  .doc-footer{ position:fixed; bottom:0.5cm; left:1.7cm; right:1.7cm; }
+  /* the on-screen preview uses a comfortable 900px reading column, but the
+     actual A4 printable area (21cm − 2×2.54cm margins) is only ~602px —
+     keeping max-width:900px here would overflow the page and could push
+     out extra/blank pages, so let print use the full available width. */
+  .doc-page{ max-width:100% !important; width:100% !important; }
+  /* keep headings glued to whatever follows them, and never split a table
+     row across a page break — the two most common causes of a page that
+     ends up looking mostly/entirely blank. */
+  .doc-page h1, .doc-page h2, .doc-page h3{
+    break-after:avoid; break-inside:avoid; page-break-after:avoid; page-break-inside:avoid;
+  }
+  .doc-page tr, .doc-page td, .doc-page th{
+    break-inside:avoid; page-break-inside:avoid;
+  }
+  .doc-page table{ break-inside:auto; }
+  /* no stray trailing whitespace after the last element that could roll a
+     near-empty final page into existence. */
+  .doc-page > *:last-child{ margin-bottom:0 !important; }
+}
+/* A4, normal (1 inch) margins — the only header/footer content is the page
+   number, drawn via a real CSS @page margin box (supported in current
+   Chromium/Firefox); nothing else occupies the print margins. */
+@page{
+  size: A4;
+  margin: 2.54cm;
+  @bottom-center{
+    content: counter(page);
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 10pt;
+    color: #333;
+  }
 }
 .doc-page{
-  font-family:'Times New Roman', Times, Georgia, serif; color:#111; padding:10px 4px 50px;
-  max-width:900px; margin:0 auto; font-size:12pt; line-height:1.15;
+  font-family:'Times New Roman', Times, Georgia, serif; color:#111; padding:0;
+  max-width:900px; margin:0 auto; font-size:12pt; line-height:1.5;
 }
-.doc-page h1{font-family:'Times New Roman', Times, serif; font-size:18pt; text-align:center; margin-bottom:2px; font-weight:700;}
-.doc-page .doc-sub{text-align:center;font-size:10.5pt;color:#555;margin-bottom:10px;line-height:1.25;}
-.doc-page h2{font-family:'Times New Roman', Times, serif; font-size:13.5pt; border-bottom:1.4pt solid var(--navy-800); padding-bottom:2px; margin:14px 0 6px; color:var(--navy-900); font-weight:700;}
-.doc-page h3{font-size:12pt; margin:9px 0 4px; color:var(--navy-800); font-weight:700;}
-.doc-page table{width:100%;border-collapse:collapse;margin:5px 0 9px;font-size:10.5pt;line-height:1.15;}
+/* Base typography for the whole document: Times New Roman 12pt, 1.5 line
+   spacing, no character-level formatting carried over from what the person
+   typed in a rich-text box. Only the title (h1) is deliberately larger. */
+.doc-page, .doc-page *{
+  font-family:'Times New Roman', Times, Georgia, serif !important;
+  font-size:12pt !important;
+  line-height:1.5 !important;
+  font-style:normal !important;
+  text-decoration:none !important;
+  font-weight:400 !important;
+}
+.doc-page h1, .doc-page h2, .doc-page h3, .doc-page table th{ font-weight:700 !important; }
+.doc-page h1{ font-size:16pt !important; text-align:center; margin:0 0 6pt; }
+.doc-page .doc-sub{text-align:center;color:#555;margin:0 0 6pt;}
+.doc-page h2{border-bottom:1.4pt solid var(--navy-800); padding-bottom:2px; margin:14px 0 6pt; color:var(--navy-900);}
+.doc-page h3{margin:9px 0 6pt; color:var(--navy-800);}
+.doc-page table{width:100%;border-collapse:collapse;margin:0 0 9px;}
 .doc-page table th,.doc-page table td{border:1px solid #999;padding:3px 6px;text-align:left;vertical-align:top;}
 .doc-page table th{background:#eef1f6;}
-.doc-page .kv{display:grid;grid-template-columns:220px 1fr;font-size:11pt;padding:1px 0;line-height:1.2;}
-.doc-page .kv b{color:#333;font-weight:700;}
-.doc-page .doc-footnote{font-size:9.5pt;color:#555;margin-top:3px;}
-.doc-page ul,.doc-page ol{margin:2px 0;padding-left:20px;}
-.doc-page p{margin:2px 0;}
+.doc-page .kv{display:grid;grid-template-columns:220px 1fr;padding:1px 0;}
+.doc-page .kv b{color:#333;}
+.doc-page .doc-footnote{color:#555;margin:0 0 6pt;}
+.doc-page ul,.doc-page ol{margin:0 0 6pt;padding-left:20px;}
+/* paragraph spacing: 0 before, 6pt after — and justified, like a formal document */
+.doc-page p{margin:0 0 6pt; text-align:justify;}
+.doc-page li{text-align:justify;}
 
-.doc-footer{
-  display:flex; justify-content:space-between; align-items:center; gap:12px;
-  font-family:'Times New Roman', Times, serif; font-size:9.5pt; color:#555;
-  border-top:0.75pt solid #aaa; padding-top:4px; margin-top:14px; max-width:900px; margin-left:auto; margin-right:auto;
-}
 
 @media (max-width:1100px){
   .app-body{flex-direction:column;}

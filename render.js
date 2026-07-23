@@ -2,6 +2,11 @@
    RENDER — builds each tab panel's HTML from `state`
    ===================================================================== */
 
+/* ---------- (?) help button — opens the BAETE reference modal (see app.js) ---------- */
+function helpButtonHTML(key, label){
+  return `<button type="button" class="help-btn" data-help="${key}" title="${escapeHtml(label||'What is this?')}">?</button>`;
+}
+
 /* ---------- reusable dropdown-checkbox component ----------
    opts:      [{code,label}] fixed options
    selected:  array of codes currently checked
@@ -19,8 +24,8 @@
 window.DD_REGISTRY = window.DD_REGISTRY || {};
 
 function ddCheckHTML(ddid, opts, selected, customArr, action, ctx, opts2){
-  const {allowCustom=true, customWarning=null} = opts2||{};
-  DD_REGISTRY[ddid] = {opts, selected, customArr, action, ctx, allowCustom, customWarning};
+  const {allowCustom=true, customWarning=null, optionSeparator=' — ', note=null} = opts2||{};
+  DD_REGISTRY[ddid] = {opts, selected, customArr, action, ctx, allowCustom, customWarning, optionSeparator, note};
 
   const chips = [
     ...selected.map(c => `<span class="dd-summary-chip">${escapeHtml(c)}</span>`),
@@ -40,18 +45,37 @@ function ddCheckHTML(ddid, opts, selected, customArr, action, ctx, opts2){
 }
 
 /* Builds the inner HTML of the floating panel for a given ddid, reading
-   current data straight out of DD_REGISTRY (kept fresh on every render). */
+   current data straight out of DD_REGISTRY (kept fresh on every render).
+   `opts` can either be a flat array of {code,label,disabled?}, or a grouped
+   array of {group, items:[{code,label}]} — grouped options render a label
+   and a divider between each domain. A disabled option renders greyed-out
+   and un-clickable (used to gate P2–P7 behind P1, see the CEP rule). */
 function buildDDPanelHTML(ddid){
   const cfg = DD_REGISTRY[ddid];
   if(!cfg) return '';
-  const {opts, selected, customArr, action, ctx, allowCustom, customWarning} = cfg;
+  const {opts, selected, customArr, action, ctx, allowCustom, customWarning, optionSeparator, note} = cfg;
+  const sep = optionSeparator===undefined ? ' — ' : optionSeparator;
 
-  const optionRows = opts.map(o => `
-    <label class="dd-check-option">
-      <input type="checkbox" data-dd-action="${action}" data-dd-ctx='${escapeHtml(JSON.stringify(ctx))}' data-dd-value="${escapeHtml(o.code)}"
+  const renderOption = (o) => `
+    <label class="dd-check-option ${o.disabled?'dd-option-disabled':''}" ${o.disabled?'title="Select P1 first to unlock this"':''}>
+      <input type="checkbox" ${o.disabled?'disabled':''} data-dd-action="${action}" data-dd-ctx='${escapeHtml(JSON.stringify(ctx))}' data-dd-value="${escapeHtml(o.code)}"
         ${selected.includes(o.code) ? 'checked':''}>
-      <span><strong>${escapeHtml(o.code)}</strong>${o.label? ' — '+escapeHtml(o.label) : ''}</span>
-    </label>`).join('') || `<div class="hint" style="padding:6px 4px;">Nothing to choose from yet.</div>`;
+      <span><strong>${escapeHtml(o.code)}</strong>${o.label? sep+escapeHtml(o.label) : ''}</span>
+    </label>`;
+
+  const isGrouped = opts.length && opts[0] && opts[0].items !== undefined;
+  let optionRows;
+  if(isGrouped){
+    optionRows = opts.map((grp, gi) => `
+      ${gi>0 ? '<div class="dd-group-sep"></div>' : ''}
+      <div class="dd-group-label">${escapeHtml(grp.group)}</div>
+      ${grp.items.map(renderOption).join('')}
+    `).join('');
+  } else {
+    optionRows = opts.map(renderOption).join('') || `<div class="hint" style="padding:6px 4px;">Nothing to choose from yet.</div>`;
+  }
+
+  const noteHTML = note ? `<div class="dd-note">${escapeHtml(note)}</div>` : '';
 
   const customRows = customArr.map((c) => `
     <label class="dd-check-option">
@@ -66,7 +90,7 @@ function buildDDPanelHTML(ddid){
         <button type="button" class="btn btn-sm" data-dd-add-custom="${action}" data-dd-ctx='${escapeHtml(JSON.stringify(ctx))}' data-dd-input="${ddid}">Add</button>
       </div>` : '';
 
-  return `${optionRows}${customRows}${customSection}`;
+  return `${noteHTML}${optionRows}${customRows}${customSection}`;
 }
 
 /* ---------- reusable mini rich-text editor ----------
@@ -241,6 +265,11 @@ function renderInfoPanel(){
     </div>
 
     <div class="card">
+      <div class="card-title"><span class="num">15b</span> Course Contents</div>
+      ${rteHTML('courseContents', state.courseContents, 'Outline the topics/content areas this course covers…')}
+    </div>
+
+    <div class="card">
       <div class="card-title"><span class="num">15</span> Course Objectives</div>
       <div class="rows-list" id="objectivesRows">${objectiveRows}</div>
       <button type="button" class="btn" style="margin-top:10px;" data-action="addObjective">+ Add Objective</button>
@@ -270,39 +299,72 @@ function renderSkillPanel(){
   const el = document.getElementById('panel-skill');
 
   const fillTd = (hasValue, extra) => `td class="${hasValue?'cell-filled':''}"${extra?(' '+extra):''}`;
+  const atOptions = currentATOptions();
+  const cepNote = '"No CP/WP" is selected by default. Checking P1 automatically adds P2 and P3 too, since a CEP outcome needs P1 plus at least 2 more of P2–P7 — once that minimum of 3 is reached, none of them can be unchecked below it (add another first, then remove one).';
 
-  const coRows = state.cos.map((co, idx) => `
+  const coRows = state.cos.map((co, idx) => {
+    const mapping = state.poMapping.find(m=>m.coId===co.id) || {coId:co.id, po:'PO(a)'};
+    const allowedK = allowedKPWKFor(mapping.po);
+    const kpwkOptions = KPWK_DEFAULTS.filter(o=>allowedK.includes(o.code));
+
+    const p1Checked = co.cpwp.includes('P1');
+    const pCount = co.cpwp.filter(c=>c!=='NoCEP').length;
+    const cpwpOptions = [
+      NO_CEP_OPTION,
+      ...CPWP_DEFAULTS.map(o => {
+        if(o.code==='P1') return o;
+        if(!p1Checked) return {...o, disabled:true};
+        const isChecked = co.cpwp.includes(o.code);
+        // locked (can't uncheck) once removing it would drop the total below 3
+        const locked = isChecked && pCount<=3;
+        return {...o, disabled:locked};
+      }),
+    ];
+
+    return `
     <tr data-row-id="${co.id}">
       <td class="co-label-cell">${co.label}</td>
       <${fillTd(co.text.trim(), 'style="min-width:220px;"')}>
         <textarea data-bind="cos.${idx}.text" placeholder="Describe this course outcome… (use **word** to bold a keyword)">${escapeHtml(co.text)}</textarea>
       </td>
-      <${fillTd(co.bt.length, 'style="min-width:160px;"')}>${ddCheckHTML('bt-'+co.id, BT_DEFAULTS, co.bt, [], 'toggleCoArr', {coId:co.id, field:'bt'}, {allowCustom:false})}</td>
-      <${fillTd(co.cpwp.length)}>${ddCheckHTML('cpwp-'+co.id, CPWP_DEFAULTS, co.cpwp, [], 'toggleCoArr', {coId:co.id, field:'cpwp'}, {allowCustom:false})}</td>
+      <${fillTd(true, 'style="min-width:110px;"')}>
+        <select data-po-select="${co.id}">
+          ${PO_VALUES.map(p=>`<option value="${p}" ${mapping.po===p?'selected':''}>${p}</option>`).join('')}
+        </select>
+      </td>
+      <${fillTd(co.bt.length, 'style="min-width:170px;"')}>${ddCheckHTML('bt-'+co.id, BT_GROUPS, co.bt, [], 'toggleCoArr', {coId:co.id, field:'bt'}, {allowCustom:false, optionSeparator:': '})}</td>
+      <${fillTd(co.cpwp.length)}>${ddCheckHTML('cpwp-'+co.id, cpwpOptions, co.cpwp, [], 'toggleCoCPWP', {coId:co.id}, {allowCustom:false, note:cepNote})}</td>
       <${fillTd(co.caea.length)}>${ddCheckHTML('caea-'+co.id, CAEA_DEFAULTS, co.caea, [], 'toggleCoArr', {coId:co.id, field:'caea'}, {allowCustom:false})}</td>
-      <${fillTd(co.kpwk.length)}>${ddCheckHTML('kpwk-'+co.id, KPWK_DEFAULTS, co.kpwk, [], 'toggleCoArr', {coId:co.id, field:'kpwk'}, {allowCustom:false})}</td>
-      <${fillTd(co.at.length)}>${ddCheckHTML('at-'+co.id, AT_DEFAULTS.map(a=>({code:a.code,label:a.label})), co.at, co.atCustom, 'toggleCoAT', {coId:co.id}, {allowCustom:true, customWarning:'Adding a custom assessment tool requires prior approval from the PSAC committee.'})}</td>
+      <${fillTd(co.kpwk.length)}>${kpwkOptions.length ? ddCheckHTML('kpwk-'+co.id, kpwkOptions, co.kpwk, [], 'toggleCoArr', {coId:co.id, field:'kpwk'}, {allowCustom:false}) : `<span class="hint">Not applicable for ${escapeHtml(mapping.po)}</span>`}</td>
+      <${fillTd(co.at.length)}>${ddCheckHTML('at-'+co.id, atOptions, co.at, co.atCustom, 'toggleCoAT', {coId:co.id}, {allowCustom:true, customWarning:'Adding a custom assessment tool requires prior approval from the PSAC committee.'})}</td>
       <${fillTd(co.dma.length)}>${ddCheckHTML('dma-'+co.id, DMA_DEFAULTS.map(d=>({code:d,label:''})), co.dma, co.dmaCustom, 'toggleCoDMA', {coId:co.id}, {allowCustom:true})}</td>
       <td>${state.cos.length>1?`<button type="button" class="btn btn-ghost btn-sm" data-action="removeCO" data-row-id="${co.id}">Remove</button>`:''}</td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 
-  const cpwpMap = {}, caeaMap = {};
+  const caeaMap = {};
   state.cos.forEach(co=>{
-    co.cpwp.forEach(n=>{ (cpwpMap[n] = cpwpMap[n]||[]).push(co.label); });
     co.caea.forEach(n=>{ (caeaMap[n] = caeaMap[n]||[]).push(co.label); });
   });
   const warnings = [];
-  Object.entries(cpwpMap).forEach(([n,list])=>{ if(list.length>1) warnings.push(`Complex Problem ${n} is mapped to more than one CO (${list.join(', ')}) — department guideline asks for only one.`); });
   Object.entries(caeaMap).forEach(([n,list])=>{ if(list.length>1) warnings.push(`Complex Activity ${n} is mapped to more than one CO (${list.join(', ')}) — department guideline asks for only one.`); });
+  state.cos.forEach(co=>{
+    if(co.cpwp.includes('P1')){
+      const extra = co.cpwp.filter(c=>c!=='P1'&&c!=='NoCEP').length;
+      if(extra < 2) warnings.push(`${co.label} has a CEP marked (P1) but needs at least 2 more of P2–P7 (currently has ${extra}).`);
+    }
+  });
 
   // custom AT tools added anywhere — surfaced in the legend, since they need PSAC approval
   const customATs = [...new Set(state.cos.flatMap(co=>co.atCustom))];
+  const atLegend = atOptions.map(a=>`${a.code}– ${a.label}`).join('; ');
 
   const poHeaders = PO_VALUES.map(p=>`<th>${p}</th>`).join('');
   const poRows = state.cos.map((co)=>{
     const mapping = state.poMapping.find(m=>m.coId===co.id) || {coId:co.id, po:'PO(a)'};
     const cells = PO_VALUES.map(poVal=>{
-      return `<td class="po-cell ${mapping.po===poVal?'po-cell-selected':''}"><input type="radio" class="po-radio" name="po-row-${co.id}" data-action="setPO" data-row-id="${co.id}" value="${poVal}" ${mapping.po===poVal?'checked':''}></td>`;
+      const on = mapping.po===poVal;
+      return `<td class="po-cell ${on?'po-cell-selected':''}">${on?'✓':''}</td>`;
     }).join('');
     return `<tr><td class="co-label-cell">${co.label}</td>${cells}</tr>`;
   }).join('');
@@ -311,19 +373,27 @@ function renderSkillPanel(){
     <div class="section-head">
       <span class="section-eyebrow">Part B</span>
       <h2 class="section-title">Skill Mapping</h2>
-      <p class="section-desc">Course Outcomes and their mapping to Program Outcomes, Bloom's Taxonomy, Complex Engineering Problems/Activities, Knowledge Profile, Assessment Tools and Delivery Methods.</p>
+      <p class="section-desc">Course Outcomes and their mapping to Program Outcomes, Bloom's/Krathwohl's/Dave's Taxonomies, Complex Engineering Problems/Activities, Knowledge Profile, Assessment Tools and Delivery Methods.</p>
     </div>
 
     <div class="card">
-      <div class="card-title"><span class="num">16</span> Course Outcomes (COs)</div>
+      <div class="card-title">
+        <span class="num">16</span> Course Outcomes (COs)
+      </div>
       <div class="notice info">
         <svg width="16" height="16" viewBox="0 0 20 20"><path fill="currentColor" d="M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm1 12H9v-6h2v6zm0-8H9V4h2v2z"/></svg>
-        <div>As per department guideline, map each Complex Problem (CP/WP) and Complex Activity (CA/EA) attribute to <strong>only one CO</strong>. Both may stay empty if this course has no complex problem or complex activity assigned. A filled cell is tinted green so you can see progress at a glance.</div>
+        <div>Pick the <strong>PO</strong> for each CO right here — the Knowledge Profile (KP/WK) choices automatically narrow to only the items that PO permits, and the Mapping table further down is built from this selection. A filled cell is tinted green so you can see progress at a glance. Use the <strong>?</strong> buttons in the table header for the official BAETE definitions.</div>
       </div>
       <div class="table-scroll">
         <table class="obe-table">
           <thead><tr>
-            <th>No.</th><th>COs</th><th>BT (Bloom's Level)</th><th>CP/WP</th><th>CA/EA</th><th>KP/WK</th><th>AT</th><th>DM&amp;A</th><th></th>
+            <th>No.</th><th>COs</th>
+            <th>PO ${helpButtonHTML('po','Programme Outcomes (PO1–PO12)')}</th>
+            <th>BT</th>
+            <th>CP/WP ${helpButtonHTML('cp','Complex Engineering Problems (P1–P7)')}</th>
+            <th>CA/EA ${helpButtonHTML('ca','Complex Engineering Activities (A1–A5)')}</th>
+            <th>KP/WK ${helpButtonHTML('kp','Knowledge Profile (K1–K8)')}</th>
+            <th>AT</th><th>DM&amp;A</th><th></th>
           </tr></thead>
           <tbody>${coRows}</tbody>
         </table>
@@ -332,7 +402,8 @@ function renderSkillPanel(){
       <button type="button" class="btn" style="margin-top:12px;" data-action="addCO">+ Add New Row</button>
 
       <div class="legend-box">
-        <strong>Legend:</strong> COs– Course Outcome; BT– Bloom's Taxonomy; CP/WP– Complex Engineering Problems; CA/EA– Complex Engineering Activities; AT– Assessment Tools; KP/WK– Knowledge Profile; DM&amp;A– Delivery Methods &amp; Activities; LT– Lab Test, LF– Lab Final, Q– Quiz, R– Report, P– Presentation, V– Viva, A– Assignment, CP– Class Performance.
+        <strong>Legend:</strong> COs– Course Outcome; PO– Program Outcome; BT– Learning Domain Level (Cognitive/Affective/Psychomotor); CP/WP– Complex Engineering Problems; CA/EA– Complex Engineering Activities; AT– Assessment Tools; KP/WK– Knowledge Profile; DM&amp;A– Delivery Methods &amp; Activities.
+        <br><strong>AT (current course type — ${escapeHtml(state.meta.courseMode||'Theory')}):</strong> ${atLegend}
         ${customATs.length? `<br><strong>Custom Assessment Tool(s) — PSAC approved:</strong> ${customATs.map(escapeHtml).join(', ')}` : ''}
       </div>
     </div>
@@ -341,11 +412,11 @@ function renderSkillPanel(){
       <div class="card-title"><span class="num">17</span> Mapping of COs with Program Outcomes (POs)</div>
       <div class="notice">
         <svg width="16" height="16" viewBox="0 0 20 20"><path fill="currentColor" d="M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm1 12H9v-6h2v6zm0-8H9V4h2v2z"/></svg>
-        <div>As per departmental practice, each CO is mapped to <strong>only one PO</strong> — selecting a PO for a row automatically clears any other selection on that row. Every CO defaults to PO(a) until changed.</div>
+        <div>Built automatically from the PO column in the Course Outcomes table above — this table itself isn't editable.</div>
       </div>
       <div class="table-scroll">
         <table class="obe-table">
-          <thead><tr><th>Course Outcomes (CO)</th>${poHeaders}</tr></thead>
+          <thead><tr><th>Course Outcomes (CO) ${helpButtonHTML('po','Programme Outcomes (PO1–PO12)')}</th>${poHeaders}</tr></thead>
           <tbody>${poRows}</tbody>
         </table>
       </div>
@@ -405,16 +476,19 @@ function renderTeachingPanel(){
 /* =====================================================================
    TAB: Assessment Approach (Part D)
    ===================================================================== */
+const SCHEDULE_OPTIONS = [
+  ...Array.from({length:14},(_,i)=>'Week '+(i+1)),
+  'Regular from Class', 'University Scheduled Midterm', 'University Scheduled Term Final',
+];
+
 function derivedAssessmentTools(){
   const map = new Map(); // code -> label
   state.cos.forEach(co=>{
     co.at.forEach(code=>{
-      if(code.toUpperCase()==='FE') return;
-      const def = AT_DEFAULTS.find(a=>a.code===code);
+      const def = AT_ALL.find(a=>a.code===code);
       map.set(code, def? def.label : code);
     });
     co.atCustom.forEach(c=>{
-      if(c.toUpperCase()==='FE') return;
       map.set(c, c);
     });
   });
@@ -424,7 +498,6 @@ function derivedAssessmentTools(){
 function renderAssessmentPanel(){
   const el = document.getElementById('panel-assessment');
   const tools = derivedAssessmentTools();
-  const isTheory = state.meta.courseMode !== 'Lab/Sessional'; // default to theory-style table unless Lab/Sessional chosen
 
   const pct = (v) => {
     const n = parseFloat(v);
@@ -434,18 +507,23 @@ function renderAssessmentPanel(){
   const toolRows = tools.map(t=>{
     const val = state.assessment.rowMarks[t.code] || '';
     total += pct(val);
-    return `<tr><td>${isTheory?'Continuous Internal Assessment (CIA)':'Continuous Internal Assessment (CIA) (100%)'}</td><td>${escapeHtml(t.label)} <span class="hint">(${escapeHtml(t.code)})</span></td>
+    return `<tr><td>Continuous Internal Assessment (CIA)</td><td>${escapeHtml(t.label)} <span class="hint">(${escapeHtml(t.code)})</span></td>
       <td><input type="text" placeholder="e.g., 10% — leave empty if unused" data-bind-mark="${escapeHtml(t.code)}" value="${escapeHtml(val)}" style="width:100%;"></td></tr>`;
   }).join('') || `<tr><td colspan="3" class="hint">No assessment tools have been selected yet in Part B (Course Outcomes) — add some there first.</td></tr>`;
 
-  if(isTheory){ total += pct(state.assessment.feMarks); }
   const totalOk = Math.round(total) === 100;
+
+  const scheduleRows = tools.map((t, ti) => {
+    const selected = state.assessment.schedule[t.code] || [];
+    return `<tr><td>${escapeHtml(t.label)} <span class="hint">(${escapeHtml(t.code)})</span></td>
+      <td>${ddCheckHTML('sched-'+ti, SCHEDULE_OPTIONS.map(o=>({code:o,label:''})), selected, [], 'toggleSchedule', {toolCode:t.code}, {allowCustom:false})}</td></tr>`;
+  }).join('') || `<tr><td colspan="2" class="hint">No assessment tools selected yet — pick some in Part B first.</td></tr>`;
 
   el.innerHTML = `
     <div class="section-head">
       <span class="section-eyebrow">Part D</span>
       <h2 class="section-title">Assessment Approach</h2>
-      <p class="section-desc">Marks distribution, Bloom's category weighting per assessment tool, and the department's grading scale.</p>
+      <p class="section-desc">Marks distribution, scheduling, Bloom's category weighting per assessment tool, and the department's grading scale.</p>
     </div>
 
     <div class="card">
@@ -460,9 +538,19 @@ function renderAssessmentPanel(){
           <tbody>
             <tr><td colspan="2">Attendance</td><td><input type="text" placeholder="e.g., 10% — leave empty if unused" data-bind-mark="attendance" value="${escapeHtml(state.assessment.attendanceMarks)}" style="width:100%;"></td></tr>
             ${toolRows}
-            ${isTheory? `<tr><td colspan="2">Final Exam (FE)</td><td><input type="text" placeholder="e.g., 50%" data-bind-mark="fe" value="${escapeHtml(state.assessment.feMarks)}" style="width:100%;"></td></tr>` : ''}
             <tr class="total-row"><td colspan="2">Total</td><td><span class="total-badge ${totalOk?'ok':'bad'}">${Math.round(total)}%</span> ${!totalOk?'<span class="hint warn"> should equal 100%</span>':''}</td></tr>
           </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="num">19b</span> Assessment Schedule</div>
+      <p class="hint" style="margin-bottom:12px;">When each selected assessment tool takes place during the semester.</p>
+      <div class="table-scroll">
+        <table class="obe-table">
+          <thead><tr><th>Assessment Tool</th><th style="width:260px;">Scheduled For</th></tr></thead>
+          <tbody>${scheduleRows}</tbody>
         </table>
       </div>
     </div>

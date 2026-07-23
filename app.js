@@ -110,11 +110,9 @@ function computeCompletion(){
   perTab.teaching = tallyOf([], state.plan.length, planFilled);
 
   // Part D
-  const isTheory = state.meta.courseMode !== 'Lab/Sessional';
   const tools = derivedAssessmentTools();
   let total = parseFloat(state.assessment.attendanceMarks)||0;
   tools.forEach(t=> total += parseFloat(state.assessment.rowMarks[t.code])||0 );
-  if(isTheory) total += parseFloat(state.assessment.feMarks)||0;
   perTab.assessment = tallyOf([Math.round(total)===100]);
 
   // Part E
@@ -185,7 +183,6 @@ document.addEventListener('input', (e)=>{
   if(t.matches('[data-bind-mark]')){
     const key = t.dataset.bindMark;
     if(key==='attendance') state.assessment.attendanceMarks = t.value;
-    else if(key==='fe') state.assessment.feMarks = t.value;
     else state.assessment.rowMarks[key] = t.value;
     updateProgressUI();
     return;
@@ -215,10 +212,18 @@ document.addEventListener('change', (e)=>{
     updateProgressUI();
     return;
   }
-  if(t.matches('[data-action="setPO"]')){
-    let m = state.poMapping.find(x=>x.coId===t.dataset.rowId);
-    if(!m){ m = {coId:t.dataset.rowId, po:''}; state.poMapping.push(m); }
+  if(t.matches('[data-po-select]')){
+    const coId = t.dataset.poSelect;
+    let m = state.poMapping.find(x=>x.coId===coId);
+    if(!m){ m = {coId, po:''}; state.poMapping.push(m); }
     m.po = t.value;
+    // BAETE convention: a PO only permits certain Knowledge Profile items —
+    // drop any previously-selected KP/WK codes that the new PO no longer allows.
+    const co = findById(state.cos, coId);
+    if(co){
+      const allowed = allowedKPWKFor(m.po);
+      co.kpwk = co.kpwk.filter(c=>allowed.includes(c));
+    }
     renderPanel(activeTab);
     updateProgressUI();
     return;
@@ -254,8 +259,43 @@ function handleDDToggle(t){
   if(action==='toggleCoArr') toggleArr(co[ctx.field]);
   else if(action==='toggleCoAT') toggleArr(co.at);
   else if(action==='toggleCoDMA') toggleArr(co.dma);
+  else if(action==='toggleCoCPWP'){
+    if(value==='NoCEP'){
+      co.cpwp = checked ? ['NoCEP'] : [];
+    } else if(value==='P1'){
+      if(checked){
+        const arr = co.cpwp.filter(c=>c!=='NoCEP');
+        if(!arr.includes('P1')) arr.push('P1');
+        // BAETE minimum: P1 plus at least 2 more — pre-fill P2 and P3 by default
+        ['P2','P3'].forEach(p=>{ if(!arr.includes(p)) arr.push(p); });
+        co.cpwp = arr;
+      } else {
+        co.cpwp = []; // unchecking P1 requires re-selecting everything (P2–P7 need P1)
+      }
+    } else {
+      const arr = co.cpwp.filter(c=>c!=='NoCEP');
+      const i = arr.indexOf(value);
+      if(checked){
+        if(i===-1) arr.push(value);
+        co.cpwp = arr;
+      } else if(i>-1){
+        // once P1 is active, at least 3 total (P1 + 2 more) must stay selected
+        const totalIfRemoved = arr.length - 1;
+        if(arr.includes('P1') && totalIfRemoved < 3){
+          toast('At least 3 complex problem attributes (including P1) are required while CEP is active.');
+        } else {
+          arr.splice(i,1);
+          co.cpwp = arr;
+        }
+      }
+    }
+  }
   else if(action==='togglePlanAssessment') toggleArr(planRow.assessment);
   else if(action==='togglePlanCO') toggleArr(planRow.cos);
+  else if(action==='toggleSchedule'){
+    if(!state.assessment.schedule[ctx.toolCode]) state.assessment.schedule[ctx.toolCode] = [];
+    toggleArr(state.assessment.schedule[ctx.toolCode]);
+  }
 }
 
 function handleDDRemoveCustom(t){
@@ -275,6 +315,9 @@ function handleDDRemoveCustom(t){
 document.addEventListener('click', (e)=>{
   const tabItem = e.target.closest('.tab-item');
   if(tabItem){ switchTab(tabItem.dataset.tab); return; }
+
+  const helpBtn = e.target.closest('[data-help]');
+  if(helpBtn){ openHelpModal(helpBtn.dataset.help); return; }
 
   const ddToggle = e.target.closest('[data-dd-toggle]');
   if(ddToggle){
@@ -428,7 +471,7 @@ document.getElementById('btnDownloadDocx').addEventListener('click', async ()=>{
 
 document.getElementById('btnDownloadPdf').addEventListener('click', ()=>{
   buildPrintView();
-  toast("Tip: tick “Headers and footers” in the print dialog for automatic page numbers");
+  toast("Tip: leave “Headers and footers” unticked in the print dialog — page numbers are already built in");
   setTimeout(()=> window.print(), 400);
 });
 
@@ -450,7 +493,45 @@ document.getElementById('btnPreview').addEventListener('click', ()=>{
 window.addEventListener('scroll', ()=>{ if(openDD) closeDropdownPortal(); }, true);
 window.addEventListener('resize', ()=>{ if(openDD) closeDropdownPortal(); });
 
+/* ---------- (?) help modal — BAETE reference text ---------- */
+function openHelpModal(key){
+  const data = HELP_CONTENT[key];
+  if(!data) return;
+  document.getElementById('helpModalTitle').textContent = data.title;
+  document.getElementById('helpModalBody').innerHTML = data.items.map(it => `
+    <div class="help-item">
+      <div class="help-item-code">${escapeHtml(it.code)}</div>
+      <div class="help-item-text">${escapeHtml(it.text)}</div>
+    </div>`).join('');
+  document.getElementById('helpModal').classList.add('open');
+}
+function closeHelpModal(){ document.getElementById('helpModal').classList.remove('open'); }
+document.getElementById('helpModalClose').addEventListener('click', closeHelpModal);
+document.getElementById('helpModal').addEventListener('click', (e)=>{
+  if(e.target.id==='helpModal') closeHelpModal();
+});
+
+/* ---------- about / version popover ---------- */
+document.getElementById('btnAbout').addEventListener('click', (e)=>{
+  e.stopPropagation();
+  document.getElementById('aboutPopover').classList.toggle('open');
+});
+document.addEventListener('click', (e)=>{
+  const pop = document.getElementById('aboutPopover');
+  if(pop.classList.contains('open') && !e.target.closest('#aboutPopover') && !e.target.closest('#btnAbout')){
+    pop.classList.remove('open');
+  }
+});
+document.addEventListener('keydown', (e)=>{
+  if(e.key==='Escape'){
+    closeHelpModal();
+    document.getElementById('aboutPopover').classList.remove('open');
+  }
+});
+
 /* ---------- init ---------- */
 renderAll();
 document.querySelectorAll('.panel').forEach(p=> p.classList.toggle('active', p.dataset.panel===activeTab));
 updateProgressUI();
+document.getElementById('aboutDeveloper').textContent = 'Developed by '+APP_DEVELOPER;
+document.getElementById('aboutVersion').textContent = 'Version '+APP_VERSION;

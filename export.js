@@ -24,8 +24,21 @@ function coAtLabel(co){
 function coDmaLabel(co){
   return joinNonEmpty([...co.dma.filter(c=>!co.dmaCustom.includes(c)), ...co.dmaCustom], ', ') || '—';
 }
+function cpwpLabel(co){
+  if(co.cpwp.includes('NoCEP')) return 'No CP/WP';
+  return co.cpwp.join(', ') || '—';
+}
 function planAssessLabel(row){ return joinNonEmpty(row.assessment, ', ') || '—'; }
 function planCoLabel(row){ return joinNonEmpty(row.cos, ', ') || '—'; }
+
+/* Strips ALL character-level formatting (bold/italic/underline/font/color) from a
+   rich-text field's HTML, keeping only plain paragraphs/bullet lines — used for the
+   PDF/print view so every bit of text renders identically regardless of how the
+   person formatted it while typing. (See htmlBlocks() further down for the block
+   extraction logic shared with the DOCX exporter.) */
+function blocksToPlainHTML(blocks){
+  return blocks.map(b => `<p>${(b.bullet||b.ordered) ? '• ' : ''}${escapeHtml(b.text)}</p>`).join('');
+}
 
 /* ---------- shared document model, used by both PDF view and DOCX ---------- */
 function docTitle(){
@@ -41,8 +54,9 @@ function docSubtitle(){
 function buildPrintView(){
   const root = document.getElementById('printRoot');
   const m = state.meta;
-  const isTheory = m.courseMode !== 'Lab/Sessional';
   const tools = derivedAssessmentTools();
+  const atOptions = currentATOptions();
+  const customATs = [...new Set(state.cos.flatMap(co=>co.atCustom))];
 
   const teacherBlocks = state.teachers.map(t=>`
     <div class="kv"><b>${escapeHtml(t.name||'—')}</b> — ${escapeHtml(t.designation||'—')}</div>
@@ -52,7 +66,7 @@ function buildPrintView(){
 
   const coRows = state.cos.map(co=>`
     <tr><td>${co.label}</td><td>${escapeHtml(co.text)}</td><td>${co.bt.join(', ')||'—'}</td>
-      <td>${co.cpwp.join(', ')||'—'}</td><td>${co.caea.join(', ')||'—'}</td><td>${co.kpwk.join(', ')||'—'}</td>
+      <td>${cpwpLabel(co)}</td><td>${co.caea.join(', ')||'—'}</td><td>${co.kpwk.join(', ')||'—'}</td>
       <td>${coAtLabel(co)}</td><td>${coDmaLabel(co)}</td></tr>`).join('');
 
   const poRows = state.cos.map(co=>{
@@ -64,19 +78,24 @@ function buildPrintView(){
   }).join('');
 
   const planRows = state.plan.map(r=>`
-    <tr><td>${escapeHtml(r.week)}</td><td>${r.topics||'—'}</td><td>${r.activity||'—'}</td>
+    <tr><td>${escapeHtml(r.week)}</td><td>${blocksToPlainHTML(htmlBlocks(r.topics))}</td><td>${blocksToPlainHTML(htmlBlocks(r.activity))}</td>
       <td>${planAssessLabel(r)}</td><td>${planCoLabel(r)}</td></tr>`).join('');
 
   let total = parseFloat(state.assessment.attendanceMarks)||0;
   const toolRows = tools.map(t=>{
     const v = state.assessment.rowMarks[t.code]||'';
     total += parseFloat(v)||0;
-    return `<tr><td>Continuous Internal Assessment (CIA)</td><td>${escapeHtml(t.label)}</td><td>${escapeHtml(v||'—')}</td></tr>`;
+    return `<tr><td>Continuous Internal Assessment (CIA)</td><td>${escapeHtml(t.label)} (${escapeHtml(t.code)})</td><td>${escapeHtml(v||'—')}</td></tr>`;
   }).join('');
-  if(isTheory) total += parseFloat(state.assessment.feMarks)||0;
+
+  const scheduleRows = tools.map(t=>`
+    <tr><td>${escapeHtml(t.label)} (${escapeHtml(t.code)})</td><td>${escapeHtml((state.assessment.schedule[t.code]||[]).join(', ')||'—')}</td></tr>`).join('')
+    || `<tr><td colspan="2">—</td></tr>`;
 
   const bloomHeaders = state.bloomCols.map(c=>`<th>${escapeHtml(c.name)}</th>`).join('');
-  const bloomRows = BLOOM_ROWS.map(rk=>`<tr><td><b>${rk}</b></td>${state.bloomCols.map(c=>`<td style="text-align:center;">${escapeHtml(c.values[rk]||'')}</td>`).join('')}</tr>`).join('');
+  const bloomRows = BLOOM_ROWS.map(rk=>`<tr><td>${rk}</td>${state.bloomCols.map(c=>`<td style="text-align:center;">${escapeHtml(c.values[rk]||'')}</td>`).join('')}</tr>`).join('');
+
+  const atLegend = atOptions.map(a=>`${a.code}– ${a.label}`).join('; ') + (customATs.length? '; '+customATs.map(escapeHtml).join('; ') : '');
 
   root.innerHTML = `
   <div class="doc-page">
@@ -102,7 +121,8 @@ function buildPrintView(){
     <h3>Course Outcomes (COs)</h3>
     <table><thead><tr><th>No.</th><th>COs</th><th>BT</th><th>CP/WP</th><th>CA/EA</th><th>KP/WK</th><th>AT</th><th>DM&amp;A</th></tr></thead>
     <tbody>${coRows}</tbody></table>
-    <div class="doc-footnote">COs– Course Outcome; BT– Bloom's Taxonomy; CP/WP– Complex Engineering Problems; CA/EA– Complex Engineering Activities; AT– Assessment Tools; KP/WK– Knowledge Profile; DM&amp;A– Delivery Methods &amp; Activities.</div>
+    <div class="doc-footnote">COs– Course Outcome; BT– Learning Domain Level (Cognitive/Affective/Psychomotor); CP/WP– Complex Engineering Problems; CA/EA– Complex Engineering Activities; AT– Assessment Tools; KP/WK– Knowledge Profile; DM&amp;A– Delivery Methods &amp; Activities.</div>
+    <div class="doc-footnote">AT (${escapeHtml(m.courseMode||'Theory')}): ${atLegend}</div>
     <h3>Mapping of COs with Program Outcomes (POs)</h3>
     <table><thead><tr><th>CO</th>${PO_VALUES.map(p=>`<th>${p}</th>`).join('')}</tr></thead>
     <tbody>${poRows}</tbody></table>
@@ -118,9 +138,11 @@ function buildPrintView(){
     <tbody>
       <tr><td colspan="2">Attendance</td><td>${escapeHtml(state.assessment.attendanceMarks||'—')}</td></tr>
       ${toolRows}
-      ${isTheory? `<tr><td colspan="2">Final Exam (FE)</td><td>${escapeHtml(state.assessment.feMarks||'—')}</td></tr>` : ''}
       <tr><td colspan="2"><b>Total</b></td><td><b>${Math.round(total)}%</b></td></tr>
     </tbody></table>
+
+    <h3>Assessment Schedule</h3>
+    <table><thead><tr><th>Assessment Tool</th><th>Scheduled For</th></tr></thead><tbody>${scheduleRows}</tbody></table>
 
     <h3>Assessment Pattern — Continuous Internal Evaluation (100 Marks)</h3>
     <table><thead><tr><th>Bloom's Category</th>${bloomHeaders}</tr></thead><tbody>${bloomRows}</tbody></table>
@@ -131,16 +153,13 @@ function buildPrintView(){
     <tbody>${GRADING_TABLE.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('')}</tbody></table>
 
     <h2>Part E: References</h2>
-    <h3>Recommended Readings</h3>${state.references.recommended}
-    <h3>Supplementary Readings — Text Book</h3>${state.references.textbooks}
-    <h3>Supplementary Readings — Others</h3>${state.references.others}
-    <h3>Others</h3>${state.references.othersDiscipline}
+    <h3>Recommended Readings</h3>${blocksToPlainHTML(htmlBlocks(state.references.recommended))}
+    <h3>Supplementary Readings — Text Book</h3>${blocksToPlainHTML(htmlBlocks(state.references.textbooks))}
+    <h3>Supplementary Readings — Others</h3>${blocksToPlainHTML(htmlBlocks(state.references.others))}
+    <h3>Others</h3>${blocksToPlainHTML(htmlBlocks(state.references.othersDiscipline))}
 
     <h2>Part F: Additional Information</h2>
     ${ADDITIONAL_FIELDS.map(f=>`<div class="kv"><span>${f.label}</span><b>${escapeHtml(state.additional[f.key]||'—')}</b></div>`).join('')}
-  </div>
-  <div class="doc-footer">
-    <span>University of Information Technology &amp; Sciences (UITS), Department of CSE — ${escapeHtml(semesterLabel())}</span>
   </div>`;
 }
 
@@ -211,8 +230,9 @@ async function exportDocx(){
   }
 
   const m = state.meta;
-  const isTheory = m.courseMode !== 'Lab/Sessional';
   const tools = derivedAssessmentTools();
+  const atOptions = currentATOptions();
+  const customATs = [...new Set(state.cos.flatMap(co=>co.atCustom))];
 
   // ---- Part A ----
   const teacherParas = state.teachers.flatMap(t => [
@@ -222,7 +242,7 @@ async function exportDocx(){
 
   // ---- Part B ----
   const coRows = state.cos.map(co => [
-    co.label, co.text||'—', co.bt.join(', ')||'—', co.cpwp.join(', ')||'—', co.caea.join(', ')||'—', co.kpwk.join(', ')||'—', coAtLabel(co), coDmaLabel(co)
+    co.label, co.text||'—', co.bt.join(', ')||'—', cpwpLabel(co), co.caea.join(', ')||'—', co.kpwk.join(', ')||'—', coAtLabel(co), coDmaLabel(co)
   ]);
   const poRows = state.cos.map(co => {
     const map = state.poMapping.find(p=>p.coId===co.id);
@@ -239,15 +259,16 @@ async function exportDocx(){
   tools.forEach(t=>{
     const v = state.assessment.rowMarks[t.code]||'';
     total += parseFloat(v)||0;
-    assessRows.push(['Continuous Internal Assessment (CIA)', t.label, v||'—']);
+    assessRows.push(['Continuous Internal Assessment (CIA)', t.label+' ('+t.code+')', v||'—']);
   });
-  if(isTheory){ total += parseFloat(state.assessment.feMarks)||0; assessRows.push(['Final Exam (FE)','', state.assessment.feMarks||'—']); }
   assessRows.push(['Total','', Math.round(total)+'%']);
+  const scheduleRows = tools.map(t=>[t.label+' ('+t.code+')', (state.assessment.schedule[t.code]||[]).join(', ')||'—']);
 
   const bloomHeaders = ["Bloom's Category", ...state.bloomCols.map(c=>c.name)];
   const bloomRows = BLOOM_ROWS.map(rk => [rk, ...state.bloomCols.map(c=>c.values[rk]||'')]);
 
   const gradingRows = GRADING_TABLE.map(r=>[r[0],r[1],r[2]]);
+  const atLegendText = atOptions.map(a=>`${a.code}– ${a.label}`).join('; ') + (customATs.length? '; '+customATs.join('; ') : '');
 
   const doc = new Document({
     styles:{
@@ -295,13 +316,16 @@ async function exportDocx(){
         kv('Counseling Schedule', scheduleText(state.counselingSchedule)),
         h3('Course Teacher(s)'), ...teacherParas,
         h3('Rationale of the Course'), body(state.rationale),
+        h3('Course Contents'),
+        ...bullets(htmlBlocks(state.courseContents)),
         h3('Course Objectives'),
         ...bullets(state.objectives.filter(o=>o.trim()).map(o=>({text:o,bullet:true}))),
 
         h2('Part B: Skill Mapping'),
         h3('Course Outcomes (COs)'),
         simpleTable(['No.','COs','BT','CP/WP','CA/EA','KP/WK','AT','DM&A'], coRows, [600,2400,900,700,700,700,1000,1000]),
-        new Paragraph({ children:[ new TextRun({text:"COs– Course Outcome; BT– Bloom's Taxonomy; CP/WP– Complex Engineering Problems; CA/EA– Complex Engineering Activities; AT– Assessment Tools; KP/WK– Knowledge Profile; DM&A– Delivery Methods & Activities.", italics:true, size:18, color:'555555', font:FONT}) ], spacing:{before:60,after:160, line:240} }),
+        new Paragraph({ children:[ new TextRun({text:"COs– Course Outcome; BT– Learning Domain Level (Cognitive/Affective/Psychomotor); CP/WP– Complex Engineering Problems; CA/EA– Complex Engineering Activities; AT– Assessment Tools; KP/WK– Knowledge Profile; DM&A– Delivery Methods & Activities.", italics:true, size:18, color:'555555', font:FONT}) ], spacing:{before:60,after:60, line:240} }),
+        new Paragraph({ children:[ new TextRun({text:`AT (${m.courseMode||'Theory'}): ${atLegendText}`, italics:true, size:18, color:'555555', font:FONT}) ], spacing:{before:0,after:160, line:240} }),
         h3('Mapping of COs with Program Outcomes (POs)'),
         simpleTable(['CO', ...PO_VALUES], poRows),
 
@@ -312,6 +336,8 @@ async function exportDocx(){
 
         h2('Part D: Assessment Approach'),
         simpleTable(['Assessment Components','','Marks Distribution'], assessRows, [3500,3500,2000]),
+        h3('Assessment Schedule'),
+        simpleTable(['Assessment Tool','Scheduled For'], scheduleRows, [4500,4500]),
         h3('Assessment Pattern — Continuous Internal Evaluation (100 Marks)'),
         simpleTable(bloomHeaders, bloomRows),
         new Paragraph({ children:[ new TextRun({text:'*The percentage distribution of Bloom\u2019s categories in the assessment tools may vary by ±5%.', italics:true, size:18, color:'555555', font:FONT}) ], spacing:{before:60,after:160, line:240} }),

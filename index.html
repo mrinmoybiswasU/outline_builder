@@ -75,6 +75,14 @@
       </div>
       <span class="toolbar-divider" aria-hidden="true"></span>
       <span class="autosave-note" id="autosaveNote">All changes kept in this session</span>
+      <div class="about-wrap">
+        <button class="icon-btn" id="btnAbout" type="button" title="About this app">i</button>
+        <div class="about-popover" id="aboutPopover">
+          <strong>OBE Course Outline Builder</strong>
+          <span id="aboutVersion">Version</span>
+          <span id="aboutDeveloper">Developed by</span>
+        </div>
+      </div>
     </div>
 
     <div class="toolbar-actions">
@@ -112,6 +120,17 @@
 
 <!-- Floating portal for dropdown-checkbox panels (see ddCheckHTML / openDropdown) -->
 <div id="ddPortal" class="dd-portal"></div>
+
+<!-- BAETE reference modal, opened by the (?) help buttons -->
+<div id="helpModal" class="help-modal">
+  <div class="help-modal-card">
+    <div class="help-modal-head">
+      <h3 id="helpModalTitle"></h3>
+      <button type="button" id="helpModalClose" class="help-modal-x" title="Close">×</button>
+    </div>
+    <div class="help-modal-body" id="helpModalBody"></div>
+  </div>
+</div>
 
 <!-- Toast -->
 <div class="toast" id="toast"></div>
