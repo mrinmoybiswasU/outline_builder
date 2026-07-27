@@ -301,6 +301,7 @@ function renderSkillPanel(){
   const fillTd = (hasValue, extra) => `td class="${hasValue?'cell-filled':''}"${extra?(' '+extra):''}`;
   const atOptions = currentATOptions();
   const cepNote = '"No CP/WP" is selected by default. Checking P1 automatically adds P2 and P3 too, since a CEP outcome needs P1 plus at least 2 more of P2–P7 — once that minimum of 3 is reached, none of them can be unchecked below it (add another first, then remove one).';
+  const caeaNote = '"No CA/EA" is selected by default. Checking A1 automatically adds A2 too, since this needs A1 plus at least 1 more of A2–A5 — once that minimum of 2 is reached, neither can be unchecked below it (add another first, then remove one).';
 
   const coRows = state.cos.map((co, idx) => {
     const mapping = state.poMapping.find(m=>m.coId===co.id) || {coId:co.id, po:'PO(a)'};
@@ -321,6 +322,20 @@ function renderSkillPanel(){
       }),
     ];
 
+    const a1Checked = co.caea.includes('A1');
+    const aCount = co.caea.filter(c=>c!=='NoCAEA').length;
+    const caeaOptions = [
+      NO_CAEA_OPTION,
+      ...CAEA_DEFAULTS.map(o => {
+        if(o.code==='A1') return o;
+        if(!a1Checked) return {...o, disabled:true};
+        const isChecked = co.caea.includes(o.code);
+        // locked (can't uncheck) once removing it would drop the total below 2
+        const locked = isChecked && aCount<=2;
+        return {...o, disabled:locked};
+      }),
+    ];
+
     return `
     <tr data-row-id="${co.id}">
       <td class="co-label-cell">${co.label}</td>
@@ -334,7 +349,7 @@ function renderSkillPanel(){
       </td>
       <${fillTd(co.bt.length, 'style="min-width:170px;"')}>${ddCheckHTML('bt-'+co.id, BT_GROUPS, co.bt, [], 'toggleCoArr', {coId:co.id, field:'bt'}, {allowCustom:false, optionSeparator:': '})}</td>
       <${fillTd(co.cpwp.length)}>${ddCheckHTML('cpwp-'+co.id, cpwpOptions, co.cpwp, [], 'toggleCoCPWP', {coId:co.id}, {allowCustom:false, note:cepNote})}</td>
-      <${fillTd(co.caea.length)}>${ddCheckHTML('caea-'+co.id, CAEA_DEFAULTS, co.caea, [], 'toggleCoArr', {coId:co.id, field:'caea'}, {allowCustom:false})}</td>
+      <${fillTd(co.caea.length)}>${ddCheckHTML('caea-'+co.id, caeaOptions, co.caea, [], 'toggleCoCAEA', {coId:co.id}, {allowCustom:false, note:caeaNote})}</td>
       <${fillTd(co.kpwk.length)}>${kpwkOptions.length ? ddCheckHTML('kpwk-'+co.id, kpwkOptions, co.kpwk, [], 'toggleCoArr', {coId:co.id, field:'kpwk'}, {allowCustom:false}) : `<span class="hint">Not applicable for ${escapeHtml(mapping.po)}</span>`}</td>
       <${fillTd(co.at.length)}>${ddCheckHTML('at-'+co.id, atOptions, co.at, co.atCustom, 'toggleCoAT', {coId:co.id}, {allowCustom:true, customWarning:'Adding a custom assessment tool requires prior approval from the PSAC committee.'})}</td>
       <${fillTd(co.dma.length)}>${ddCheckHTML('dma-'+co.id, DMA_DEFAULTS.map(d=>({code:d,label:''})), co.dma, co.dmaCustom, 'toggleCoDMA', {coId:co.id}, {allowCustom:true})}</td>
@@ -342,16 +357,15 @@ function renderSkillPanel(){
     </tr>`;
   }).join('');
 
-  const caeaMap = {};
-  state.cos.forEach(co=>{
-    co.caea.forEach(n=>{ (caeaMap[n] = caeaMap[n]||[]).push(co.label); });
-  });
   const warnings = [];
-  Object.entries(caeaMap).forEach(([n,list])=>{ if(list.length>1) warnings.push(`Complex Activity ${n} is mapped to more than one CO (${list.join(', ')}) — department guideline asks for only one.`); });
   state.cos.forEach(co=>{
     if(co.cpwp.includes('P1')){
       const extra = co.cpwp.filter(c=>c!=='P1'&&c!=='NoCEP').length;
       if(extra < 2) warnings.push(`${co.label} has a CEP marked (P1) but needs at least 2 more of P2–P7 (currently has ${extra}).`);
+    }
+    if(co.caea.includes('A1')){
+      const extra = co.caea.filter(c=>c!=='A1'&&c!=='NoCAEA').length;
+      if(extra < 1) warnings.push(`${co.label} has A1 marked but needs at least 1 more of A2–A5.`);
     }
   });
 
@@ -492,7 +506,11 @@ function derivedAssessmentTools(){
       map.set(c, c);
     });
   });
-  return [...map.entries()].map(([code,label])=>({code,label}));
+  const tools = [...map.entries()].map(([code,label])=>({code,label}));
+  // Final Exam, if present, always goes last (see renderAssessmentPanel / exports for its special "Final Exam (FE)" label)
+  const feIdx = tools.findIndex(t=>t.code==='F');
+  if(feIdx>-1) tools.push(tools.splice(feIdx,1)[0]);
+  return tools;
 }
 
 function renderAssessmentPanel(){
@@ -507,7 +525,8 @@ function renderAssessmentPanel(){
   const toolRows = tools.map(t=>{
     const val = state.assessment.rowMarks[t.code] || '';
     total += pct(val);
-    return `<tr><td>Continuous Internal Assessment (CIA)</td><td>${escapeHtml(t.label)} <span class="hint">(${escapeHtml(t.code)})</span></td>
+    const isFE = t.code==='F';
+    return `<tr><td>${isFE? 'Final Exam (FE)' : 'Continuous Internal Assessment (CIA)'}</td><td>${isFE? '' : `${escapeHtml(t.label)} <span class="hint">(${escapeHtml(t.code)})</span>`}</td>
       <td><input type="text" placeholder="e.g., 10% — leave empty if unused" data-bind-mark="${escapeHtml(t.code)}" value="${escapeHtml(val)}" style="width:100%;"></td></tr>`;
   }).join('') || `<tr><td colspan="3" class="hint">No assessment tools have been selected yet in Part B (Course Outcomes) — add some there first.</td></tr>`;
 

@@ -290,6 +290,37 @@ function handleDDToggle(t){
       }
     }
   }
+  else if(action==='toggleCoCAEA'){
+    if(value==='NoCAEA'){
+      co.caea = checked ? ['NoCAEA'] : [];
+    } else if(value==='A1'){
+      if(checked){
+        const arr = co.caea.filter(c=>c!=='NoCAEA');
+        if(!arr.includes('A1')) arr.push('A1');
+        // minimum: A1 plus at least 1 more — pre-fill A2 by default
+        if(!arr.includes('A2')) arr.push('A2');
+        co.caea = arr;
+      } else {
+        co.caea = []; // unchecking A1 requires re-selecting everything (A2–A5 need A1)
+      }
+    } else {
+      const arr = co.caea.filter(c=>c!=='NoCAEA');
+      const i = arr.indexOf(value);
+      if(checked){
+        if(i===-1) arr.push(value);
+        co.caea = arr;
+      } else if(i>-1){
+        // once A1 is active, at least 2 total (A1 + 1 more) must stay selected
+        const totalIfRemoved = arr.length - 1;
+        if(arr.includes('A1') && totalIfRemoved < 2){
+          toast('At least 2 complex activity attributes (including A1) are required.');
+        } else {
+          arr.splice(i,1);
+          co.caea = arr;
+        }
+      }
+    }
+  }
   else if(action==='togglePlanAssessment') toggleArr(planRow.assessment);
   else if(action==='togglePlanCO') toggleArr(planRow.cos);
   else if(action==='toggleSchedule'){
@@ -469,10 +500,10 @@ document.getElementById('btnDownloadDocx').addEventListener('click', async ()=>{
   catch(err){ console.error(err); alert('Could not generate the Word document: '+err.message); }
 });
 
-document.getElementById('btnDownloadPdf').addEventListener('click', ()=>{
-  buildPrintView();
-  toast("Tip: leave “Headers and footers” unticked in the print dialog — page numbers are already built in");
-  setTimeout(()=> window.print(), 400);
+document.getElementById('btnDownloadPdf').addEventListener('click', async ()=>{
+  toast('Building PDF…');
+  try{ await exportPdfFile(); toast('PDF downloaded'); }
+  catch(err){ console.error(err); alert('Could not generate the PDF: '+err.message); }
 });
 
 document.getElementById('btnPreview').addEventListener('click', ()=>{

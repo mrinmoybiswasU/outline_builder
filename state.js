@@ -111,6 +111,9 @@ const PO_NAMES = {
 /* "No CP/WP" is a mutually-exclusive pseudo-option in the CP/WP picker — see
    the CEP-gating logic in app.js (toggleCoCPWP). Selected by default. */
 const NO_CEP_OPTION = {code:'NoCEP', label:'No CP/WP'};
+/* Same idea as CP/WP: "No CA/EA" is mutually exclusive with A1–A5, selected
+   by default. See the CA/EA-gating logic in app.js (toggleCoCAEA). */
+const NO_CAEA_OPTION = {code:'NoCAEA', label:'No CA/EA'};
 
 function poKeyFromValue(poValue){
   const m = /^PO\(([a-l])\)$/.exec(poValue||'');
@@ -220,7 +223,7 @@ function newTeacher(){ return {id:uid(), name:'', designation:'', room:'', email
 function newCO(index){
   return {
     id:uid(), label:'CO'+index, text:'',
-    bt:[], cpwp:['NoCEP'], caea:[], kpwk:[],
+    bt:[], cpwp:['NoCEP'], caea:['NoCAEA'], kpwk:[],
     at:[], atCustom:[], dma:[], dmaCustom:[],
   };
 }

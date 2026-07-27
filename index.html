@@ -103,7 +103,7 @@
         <svg viewBox="0 0 20 20" width="16" height="16"><path fill="currentColor" d="M4 2h8l4 4v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zm7.5 5.5H16L11.5 3v4.5zM6.3 10l1.1 5h1.1l.9-3.3.9 3.3h1.1l1.1-5h-1.2l-.6 3.2-.9-3.2H8.6l-.9 3.2-.6-3.2H6.3z"/></svg>
         Download .docx
       </button>
-      <button class="tbtn" id="btnDownloadPdf" type="button" title="Open a print-ready view to save as PDF">
+      <button class="tbtn" id="btnDownloadPdf" type="button" title="Generate and download a formatted PDF">
         <svg viewBox="0 0 20 20" width="16" height="16"><path fill="currentColor" d="M4 2h8l4 4v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zm7.5 5.5H16L11.5 3v4.5zM6 10.5h2.2c1.1 0 1.8.6 1.8 1.6s-.7 1.6-1.8 1.6H7v1.8H6v-5zm1 2.3h1c.5 0 .8-.2.8-.7s-.3-.7-.8-.7H7v1.4zm3.3-2.3H12c1.3 0 2.1.9 2.1 2.5s-.8 2.5-2.1 2.5h-1.7v-5zm1 4.1h.6c.7 0 1.1-.5 1.1-1.6s-.4-1.6-1.1-1.6h-.6v3.2z"/></svg>
         Download PDF
       </button>
@@ -136,6 +136,8 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/docx@8.5/build/index.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
 <script src="state.js"></script>
 <script src="render.js"></script>
 <script src="export.js"></script>

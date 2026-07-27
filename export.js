@@ -28,6 +28,10 @@ function cpwpLabel(co){
   if(co.cpwp.includes('NoCEP')) return 'No CP/WP';
   return co.cpwp.join(', ') || '—';
 }
+function caeaLabel(co){
+  if(co.caea.includes('NoCAEA')) return 'No CA/EA';
+  return co.caea.join(', ') || '—';
+}
 function planAssessLabel(row){ return joinNonEmpty(row.assessment, ', ') || '—'; }
 function planCoLabel(row){ return joinNonEmpty(row.cos, ', ') || '—'; }
 
@@ -66,7 +70,7 @@ function buildPrintView(){
 
   const coRows = state.cos.map(co=>`
     <tr><td>${co.label}</td><td>${escapeHtml(co.text)}</td><td>${co.bt.join(', ')||'—'}</td>
-      <td>${cpwpLabel(co)}</td><td>${co.caea.join(', ')||'—'}</td><td>${co.kpwk.join(', ')||'—'}</td>
+      <td>${cpwpLabel(co)}</td><td>${caeaLabel(co)}</td><td>${co.kpwk.join(', ')||'—'}</td>
       <td>${coAtLabel(co)}</td><td>${coDmaLabel(co)}</td></tr>`).join('');
 
   const poRows = state.cos.map(co=>{
@@ -85,7 +89,8 @@ function buildPrintView(){
   const toolRows = tools.map(t=>{
     const v = state.assessment.rowMarks[t.code]||'';
     total += parseFloat(v)||0;
-    return `<tr><td>Continuous Internal Assessment (CIA)</td><td>${escapeHtml(t.label)} (${escapeHtml(t.code)})</td><td>${escapeHtml(v||'—')}</td></tr>`;
+    const isFE = t.code==='F';
+    return `<tr><td>${isFE? 'Final Exam (FE)' : 'Continuous Internal Assessment (CIA)'}</td><td>${isFE? '' : `${escapeHtml(t.label)} (${escapeHtml(t.code)})`}</td><td>${escapeHtml(v||'—')}</td></tr>`;
   }).join('');
 
   const scheduleRows = tools.map(t=>`
@@ -242,7 +247,7 @@ async function exportDocx(){
 
   // ---- Part B ----
   const coRows = state.cos.map(co => [
-    co.label, co.text||'—', co.bt.join(', ')||'—', cpwpLabel(co), co.caea.join(', ')||'—', co.kpwk.join(', ')||'—', coAtLabel(co), coDmaLabel(co)
+    co.label, co.text||'—', co.bt.join(', ')||'—', cpwpLabel(co), caeaLabel(co), co.kpwk.join(', ')||'—', coAtLabel(co), coDmaLabel(co)
   ]);
   const poRows = state.cos.map(co => {
     const map = state.poMapping.find(p=>p.coId===co.id);
@@ -259,7 +264,8 @@ async function exportDocx(){
   tools.forEach(t=>{
     const v = state.assessment.rowMarks[t.code]||'';
     total += parseFloat(v)||0;
-    assessRows.push(['Continuous Internal Assessment (CIA)', t.label+' ('+t.code+')', v||'—']);
+    const isFE = t.code==='F';
+    assessRows.push([isFE? 'Final Exam (FE)' : 'Continuous Internal Assessment (CIA)', isFE? '' : t.label+' ('+t.code+')', v||'—']);
   });
   assessRows.push(['Total','', Math.round(total)+'%']);
   const scheduleRows = tools.map(t=>[t.label+' ('+t.code+')', (state.assessment.schedule[t.code]||[]).join(', ')||'—']);
@@ -363,4 +369,217 @@ async function exportDocx(){
   a.href = url; a.download = name+'.docx';
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url), 4000);
+}
+
+/* ===================== TRUE PDF GENERATOR (jsPDF + autoTable) ===================== */
+async function exportPdfFile(){
+  if(typeof jspdf === 'undefined' || !jspdf.jsPDF){
+    throw new Error("The PDF library hasn't loaded — check your internet connection and reload the page, then try again.");
+  }
+  const { jsPDF } = jspdf;
+  const doc = new jsPDF({ unit:'pt', format:'a4' });
+  try{ doc.setLineHeightFactor(1.5); }catch(e){ /* older builds may not expose this — spacing is still handled manually below */ }
+
+  const FONT = 'times';
+  const SIZE = 12;
+  const LH = SIZE*1.5;
+  const MARGIN = 72; // 1 inch — "normal" margin
+  const FOOTER_RESERVE = 30;
+  const PAGE_W = doc.internal.pageSize.getWidth();
+  const PAGE_H = doc.internal.pageSize.getHeight();
+  const CONTENT_W = PAGE_W - MARGIN*2;
+  let y = MARGIN;
+
+  function ensure(h){
+    if(y + h > PAGE_H - MARGIN - FOOTER_RESERVE){
+      doc.addPage();
+      y = MARGIN;
+    }
+  }
+  function pdfTitle(text){
+    doc.setFont(FONT,'bold'); doc.setFontSize(16); doc.setTextColor(17,17,17);
+    const lines = doc.splitTextToSize(text, CONTENT_W);
+    const lh = 16*1.5;
+    ensure(lines.length*lh);
+    lines.forEach((line,i)=> doc.text(line, PAGE_W/2, y+i*lh+12, {align:'center'}));
+    y += lines.length*lh + 6;
+  }
+  function pdfSubtitle(text){
+    doc.setFont(FONT,'normal'); doc.setFontSize(SIZE); doc.setTextColor(85,85,85);
+    const lines = doc.splitTextToSize(text, CONTENT_W);
+    ensure(lines.length*LH);
+    lines.forEach((line,i)=> doc.text(line, PAGE_W/2, y+i*LH+9, {align:'center'}));
+    y += lines.length*LH;
+    doc.setTextColor(17,17,17);
+  }
+  function pdfH2(text){
+    y += 6;
+    ensure(LH+10);
+    doc.setFont(FONT,'bold'); doc.setFontSize(SIZE); doc.setTextColor(13,31,54);
+    doc.text(text, MARGIN, y+9);
+    y += LH;
+    doc.setDrawColor(13,31,54); doc.setLineWidth(1);
+    doc.line(MARGIN, y, MARGIN+CONTENT_W, y);
+    y += 8;
+    doc.setTextColor(17,17,17);
+  }
+  function pdfH3(text){
+    ensure(LH+6);
+    doc.setFont(FONT,'bold'); doc.setFontSize(SIZE); doc.setTextColor(23,56,97);
+    doc.text(text, MARGIN, y+9);
+    y += LH;
+    doc.setTextColor(17,17,17);
+  }
+  function pdfParagraph(text){
+    doc.setFont(FONT,'normal'); doc.setFontSize(SIZE); doc.setTextColor(17,17,17);
+    const lines = doc.splitTextToSize(text||'—', CONTENT_W);
+    const totalH = lines.length*LH;
+    ensure(totalH+6);
+    lines.forEach((line,i)=>{
+      const isLast = i===lines.length-1;
+      doc.text(line, MARGIN, y+i*LH+9, isLast ? {} : {maxWidth:CONTENT_W, align:'justify'});
+    });
+    y += totalH + 6;
+  }
+  function pdfBulletList(items){
+    doc.setFont(FONT,'normal'); doc.setFontSize(SIZE); doc.setTextColor(17,17,17);
+    (items.length?items:['—']).forEach(text=>{
+      const lines = doc.splitTextToSize(text, CONTENT_W-14);
+      const totalH = lines.length*LH;
+      ensure(totalH);
+      doc.text('•', MARGIN, y+9);
+      lines.forEach((line,i)=> doc.text(line, MARGIN+14, y+i*LH+9));
+      y += totalH;
+    });
+    y += 6;
+  }
+  function pdfKV(label, value){
+    doc.setFont(FONT,'bold'); doc.setFontSize(SIZE); doc.setTextColor(17,17,17);
+    const labelText = label+': ';
+    const labelW = doc.getTextWidth(labelText);
+    doc.setFont(FONT,'normal');
+    const lines = doc.splitTextToSize(String(value??'—')||'—', CONTENT_W-labelW);
+    const totalH = Math.max(lines.length,1)*LH;
+    ensure(totalH);
+    doc.setFont(FONT,'bold');
+    doc.text(labelText, MARGIN, y+9);
+    doc.setFont(FONT,'normal');
+    lines.forEach((line,i)=> doc.text(line, MARGIN+labelW, y+i*LH+9));
+    y += totalH;
+  }
+  function pdfTable(head, body, columnStyles){
+    ensure(LH*2);
+    doc.autoTable({
+      head:[head], body, startY:y,
+      margin:{left:MARGIN, right:MARGIN, bottom:MARGIN+FOOTER_RESERVE},
+      styles:{font:FONT, fontSize:9, cellPadding:3, lineColor:[150,150,150], lineWidth:0.5, valign:'top', textColor:[17,17,17]},
+      headStyles:{fillColor:[13,31,54], textColor:255, fontStyle:'bold', fontSize:9},
+      alternateRowStyles:{fillColor:[251,252,254]},
+      columnStyles: columnStyles||{},
+      theme:'grid',
+    });
+    y = doc.lastAutoTable.finalY + 10;
+  }
+  function pdfBlocks(html){
+    htmlBlocks(html).forEach(b => pdfParagraph((b.bullet||b.ordered?'• ':'')+b.text));
+  }
+
+  /* ---------- content ---------- */
+  const m = state.meta;
+  pdfTitle(docTitle());
+  pdfSubtitle('University of Information Technology & Sciences (UITS) · Department of Computer Science & Engineering');
+  pdfSubtitle(docSubtitle());
+  y += 4;
+
+  pdfH2('Part A: Course Information');
+  pdfKV('Course Type', joinNonEmpty([m.courseCategory,m.courseMode],' · '));
+  pdfKV('Prerequisite(s)', m.prerequisites.join(', ')||'None');
+  pdfKV('Credit Value', m.creditValue);
+  pdfKV('Contact Hours', (m.contactHours||'—')+' hours/Week');
+  pdfKV('Class Schedule', scheduleText(state.classSchedule));
+  pdfKV('Counseling Schedule', scheduleText(state.counselingSchedule));
+  pdfH3('Course Teacher(s)');
+  state.teachers.forEach(t=>{
+    pdfKV(t.name||'—', t.designation||'—');
+    pdfParagraph(`Room ${t.room||'—'} · ${t.email||'—'} · ${t.cell||'—'} · ${t.specialization||'—'}`);
+  });
+  pdfH3('Rationale of the Course');
+  pdfParagraph(state.rationale);
+  pdfH3('Course Objectives');
+  pdfBulletList(state.objectives.filter(o=>o.trim()));
+
+  pdfH2('Part B: Skill Mapping');
+  pdfH3('Course Outcomes (COs)');
+  pdfTable(
+    ['No.','COs','BT','CP/WP','CA/EA','KP/WK','AT','DM&A'],
+    state.cos.map(co=>[co.label, co.text||'—', co.bt.join(', ')||'—', cpwpLabel(co), caeaLabel(co), co.kpwk.join(', ')||'—', coAtLabel(co), coDmaLabel(co)]),
+    {0:{cellWidth:26}}
+  );
+  pdfParagraph("COs– Course Outcome; BT– Learning Domain Level (Cognitive/Affective/Psychomotor); CP/WP– Complex Engineering Problems; CA/EA– Complex Engineering Activities; AT– Assessment Tools; KP/WK– Knowledge Profile; DM&A– Delivery Methods & Activities.");
+  const atOptions = currentATOptions();
+  const customATs = [...new Set(state.cos.flatMap(co=>co.atCustom))];
+  pdfParagraph(`AT (${m.courseMode||'Theory'}): ${atOptions.map(a=>`${a.code}– ${a.label}`).join('; ')}${customATs.length? '; '+customATs.join('; ') : ''}`);
+
+  pdfH3('Mapping of COs with Program Outcomes (POs)');
+  pdfTable(
+    ['CO', ...PO_VALUES],
+    state.cos.map(co=>{
+      const map = state.poMapping.find(p=>p.coId===co.id);
+      return [co.label, ...PO_VALUES.map(pv => map && map.po===pv ? '✓' : '')];
+    })
+  );
+
+  pdfH2('Part C: Teaching Learning Approach');
+  pdfKV('Commencement of Semester', fmtDate(state.semesterStart));
+  pdfKV('Last Class of Semester', fmtDate(state.semesterEnd));
+  pdfTable(
+    ['Week','Topics','Suggested Activity & Teaching Strategy','Assessment Strategy','Corresponding COs'],
+    state.plan.map(r=>[r.week, plainText(r.topics)||'—', plainText(r.activity)||'—', planAssessLabel(r), planCoLabel(r)])
+  );
+
+  pdfH2('Part D: Assessment Approach');
+  const tools = derivedAssessmentTools();
+  let totalMarks = parseFloat(state.assessment.attendanceMarks)||0;
+  const assessBody = [['Attendance','', state.assessment.attendanceMarks||'—']];
+  tools.forEach(t=>{
+    const v = state.assessment.rowMarks[t.code]||'';
+    totalMarks += parseFloat(v)||0;
+    const isFE = t.code==='F';
+    assessBody.push([isFE?'Final Exam (FE)':'Continuous Internal Assessment (CIA)', isFE?'':`${t.label} (${t.code})`, v||'—']);
+  });
+  assessBody.push(['Total','', Math.round(totalMarks)+'%']);
+  pdfTable(['Assessment Components','','Marks Distribution'], assessBody);
+
+  pdfH3('Assessment Schedule');
+  pdfTable(['Assessment Tool','Scheduled For'], tools.map(t=>[`${t.label} (${t.code})`, (state.assessment.schedule[t.code]||[]).join(', ')||'—']));
+
+  pdfH3('Assessment Pattern — Continuous Internal Evaluation (100 Marks)');
+  pdfTable(["Bloom's Category", ...state.bloomCols.map(c=>c.name)], BLOOM_ROWS.map(rk=>[rk, ...state.bloomCols.map(c=>c.values[rk]||'')]));
+  pdfParagraph("*The percentage distribution of Bloom's categories in the assessment tools may vary by ±5%.");
+
+  pdfH3('Grading System');
+  pdfTable(['Numerical Grade','Letter Grade','Grade Point'], GRADING_TABLE.map(r=>[r[0],r[1],r[2]]));
+
+  pdfH2('Part E: References');
+  pdfH3('Recommended Readings'); pdfBlocks(state.references.recommended);
+  pdfH3('Supplementary Readings — Text Book'); pdfBlocks(state.references.textbooks);
+  pdfH3('Supplementary Readings — Others'); pdfBlocks(state.references.others);
+  pdfH3('Others'); pdfBlocks(state.references.othersDiscipline);
+
+  pdfH2('Part F: Additional Information');
+  ADDITIONAL_FIELDS.forEach(f => pdfKV(f.label, state.additional[f.key]));
+
+  /* ---------- footer on every page: left dept text, right page number ---------- */
+  const pageCount = doc.getNumberOfPages();
+  for(let i=1;i<=pageCount;i++){
+    doc.setPage(i);
+    doc.setDrawColor(170,170,170); doc.setLineWidth(0.5);
+    doc.line(MARGIN, PAGE_H-MARGIN+8, PAGE_W-MARGIN, PAGE_H-MARGIN+8);
+    doc.setFont(FONT,'normal'); doc.setFontSize(9); doc.setTextColor(85,85,85);
+    doc.text('Department of CSE/UITS', MARGIN, PAGE_H-MARGIN+20);
+    doc.text(String(i), PAGE_W-MARGIN, PAGE_H-MARGIN+20, {align:'right'});
+  }
+
+  const name = (state.meta.courseCode || 'course-outline').replace(/[^a-z0-9]+/gi,'-').toLowerCase();
+  doc.save(name+'.pdf');
 }

@@ -74,6 +74,13 @@ Management System Lab*.
 - The **(?) help buttons** now sit in the table header next to their actual column (PO, CP/WP, CA/EA, KP/WK) instead of bunched beside "Course Outcomes (COs)."
 - **PDF typography updated**: Times New Roman 12pt, 1.5 line spacing, paragraphs justified with 0pt space before / 6pt after, and the document title at 16pt bold (everything else stays consistent body text).
 
+## Latest changes
+
+- **CA/EA now has the same kind of rule as CP/WP**: defaults to "No CA/EA"; checking **A1** auto-adds **A2** (needs A1 + at least 1 more); once at that minimum of 2, neither can be unchecked below it.
+- **Final Exam (FE)** always sorts to the last row of the Assessment Components table, and reads simply "Final Exam (FE)" rather than being labelled as Continuous Internal Assessment.
+- **Download PDF now produces a real .pdf file directly** — no more print dialog. It's built with jsPDF + AutoTable (Times New Roman, 12pt, 1.5 line spacing, justified paragraphs, A4 with 1-inch margins), and every page gets a footer: **"Department of CSE/UITS"** on the left, **page number** on the right.
+- The **Preview** button still shows the in-app formatted view (unchanged) — only the actual PDF download changed.
+
 ## Previous update
 
 - BT/CP-WP/CA-EA/KP-WK show full names in-app with codes-only in exports; filled cells turn green; PO is now PO(a)–PO(l); custom Assessment Tools require a PSAC note; dropdowns float freely; references start empty; fixed the Word-export CDN link; Word export uses Times New Roman 12pt with a left institution/semester footer and a right page number.
