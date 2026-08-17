@@ -173,19 +173,40 @@ function htmlBlocks(html){
   const d = document.createElement('div');
   d.innerHTML = html || '';
   const blocks = [];
+  let buffer = '';
+  const flush = () => {
+    const t = buffer.replace(/\s+/g,' ').trim();
+    if(t) blocks.push({text:t, bullet:false, ordered:false});
+    buffer = '';
+  };
   const walk = (node) => {
     node.childNodes.forEach(ch=>{
-      if(ch.nodeType===3){ if(ch.textContent.trim()) blocks.push({text:ch.textContent, bullet:false, ordered:false}); return; }
+      if(ch.nodeType===3){
+        const t = ch.textContent;
+        if(t.trim()) buffer += (buffer?' ':'')+t;
+        return;
+      }
       if(ch.nodeType!==1) return;
       const tag = ch.tagName.toLowerCase();
-      if(tag==='li'){ blocks.push({text:ch.textContent.trim(), bullet: ch.parentElement && ch.parentElement.tagName.toLowerCase()==='ul', ordered: ch.parentElement && ch.parentElement.tagName.toLowerCase()==='ol'}); }
-      else if(tag==='ul' || tag==='ol'){ walk(ch); }
-      else if(tag==='p' || tag==='div'){ if(ch.textContent.trim()) blocks.push({text:ch.textContent.trim(), bullet:false, ordered:false}); }
-      else if(tag==='br'){ /* skip */ }
-      else { if(ch.textContent.trim()) blocks.push({text:ch.textContent.trim(), bullet:false, ordered:false}); }
+      if(tag==='li'){
+        flush();
+        blocks.push({text:ch.textContent.trim(), bullet: ch.parentElement && ch.parentElement.tagName.toLowerCase()==='ul', ordered: ch.parentElement && ch.parentElement.tagName.toLowerCase()==='ol'});
+      }
+      else if(tag==='ul' || tag==='ol'){ flush(); walk(ch); }
+      else if(tag==='br'){ buffer += ' '; /* soft break — stays part of the same paragraph */ }
+      else if(tag==='p' || tag==='div'){
+        const txt = ch.textContent.trim();
+        if(!txt) flush(); // an empty line is treated as an intentional paragraph break
+        else buffer += (buffer?' ':'')+txt;
+      }
+      else {
+        const txt = ch.textContent.trim();
+        if(txt) buffer += (buffer?' ':'')+txt;
+      }
     });
   };
   walk(d);
+  flush();
   if(!blocks.length) blocks.push({text:'—', bullet:false, ordered:false});
   return blocks;
 }
@@ -384,31 +405,31 @@ async function exportPdfFile(){
   const SIZE = 12;
   const LH = SIZE*1.5;
   const MARGIN = 72; // 1 inch — "normal" margin
-  const FOOTER_RESERVE = 30;
-  const PAGE_W = doc.internal.pageSize.getWidth();
-  const PAGE_H = doc.internal.pageSize.getHeight();
-  const CONTENT_W = PAGE_W - MARGIN*2;
+  const FOOTER_RESERVE = 26;
+  const pageW = () => doc.internal.pageSize.getWidth();
+  const pageH = () => doc.internal.pageSize.getHeight();
+  const contentW = () => pageW() - MARGIN*2;
   let y = MARGIN;
 
   function ensure(h){
-    if(y + h > PAGE_H - MARGIN - FOOTER_RESERVE){
+    if(y + h > pageH() - MARGIN - FOOTER_RESERVE){
       doc.addPage();
       y = MARGIN;
     }
   }
   function pdfTitle(text){
     doc.setFont(FONT,'bold'); doc.setFontSize(16); doc.setTextColor(17,17,17);
-    const lines = doc.splitTextToSize(text, CONTENT_W);
+    const lines = doc.splitTextToSize(text, contentW());
     const lh = 16*1.5;
     ensure(lines.length*lh);
-    lines.forEach((line,i)=> doc.text(line, PAGE_W/2, y+i*lh+12, {align:'center'}));
+    lines.forEach((line,i)=> doc.text(line, pageW()/2, y+i*lh+12, {align:'center'}));
     y += lines.length*lh + 6;
   }
   function pdfSubtitle(text){
     doc.setFont(FONT,'normal'); doc.setFontSize(SIZE); doc.setTextColor(85,85,85);
-    const lines = doc.splitTextToSize(text, CONTENT_W);
+    const lines = doc.splitTextToSize(text, contentW());
     ensure(lines.length*LH);
-    lines.forEach((line,i)=> doc.text(line, PAGE_W/2, y+i*LH+9, {align:'center'}));
+    lines.forEach((line,i)=> doc.text(line, pageW()/2, y+i*LH+9, {align:'center'}));
     y += lines.length*LH;
     doc.setTextColor(17,17,17);
   }
@@ -419,7 +440,7 @@ async function exportPdfFile(){
     doc.text(text, MARGIN, y+9);
     y += LH;
     doc.setDrawColor(13,31,54); doc.setLineWidth(1);
-    doc.line(MARGIN, y, MARGIN+CONTENT_W, y);
+    doc.line(MARGIN, y, MARGIN+contentW(), y);
     y += 8;
     doc.setTextColor(17,17,17);
   }
@@ -430,59 +451,165 @@ async function exportPdfFile(){
     y += LH;
     doc.setTextColor(17,17,17);
   }
+  // Renders `text` justified on every line except the last, letting jsPDF do
+  // its own wrapping in a single call — this matters: calling doc.text() once
+  // PER PRE-SPLIT LINE (the previous approach) makes jsPDF treat every line as
+  // its own "last line" of a one-line call, so none of them ever justify.
+  // Passing the whole paragraph + maxWidth in one call is what actually works,
+  // and it also mirrors exactly what autoTable itself does for halign:'justify'.
+  function justifiedBlock(text, x, w, size){
+    doc.setFont(FONT,'normal'); doc.setFontSize(size);
+    const raw = text || '—';
+    const lines = doc.splitTextToSize(raw, w);
+    const lh = size*1.5;
+    doc.text(raw, x, y+size*0.78, {maxWidth:w, align:'justify'});
+    return lines.length*lh;
+  }
+  // Paragraphs normally fit in a single ensure()+draw. On the rare chance one
+  // is taller than a full page, it's chunked across pages instead of letting
+  // it run off the bottom — matches the same "never overflow" rule as tables.
   function pdfParagraph(text){
     doc.setFont(FONT,'normal'); doc.setFontSize(SIZE); doc.setTextColor(17,17,17);
-    const lines = doc.splitTextToSize(text||'—', CONTENT_W);
-    const totalH = lines.length*LH;
-    ensure(totalH+6);
-    lines.forEach((line,i)=>{
-      const isLast = i===lines.length-1;
-      doc.text(line, MARGIN, y+i*LH+9, isLast ? {} : {maxWidth:CONTENT_W, align:'justify'});
-    });
-    y += totalH + 6;
+    const raw = text || '—';
+    const allLines = doc.splitTextToSize(raw, contentW());
+    const totalH = allLines.length*LH;
+    const fullPageH = pageH() - MARGIN*2 - FOOTER_RESERVE;
+    if(totalH <= fullPageH){
+      ensure(totalH+6);
+      justifiedBlock(raw, MARGIN, contentW(), SIZE);
+      y += totalH + 6;
+    } else {
+      let idx = 0;
+      while(idx < allLines.length){
+        ensure(LH);
+        const availH = pageH()-MARGIN-FOOTER_RESERVE-y;
+        const linesThatFit = Math.max(1, Math.floor(availH/LH));
+        const chunk = allLines.slice(idx, idx+linesThatFit);
+        doc.text(chunk, MARGIN, y+SIZE*0.78, {maxWidth:contentW(), align:'justify'});
+        y += chunk.length*LH;
+        idx += chunk.length;
+        if(idx < allLines.length){ doc.addPage(); y = MARGIN; }
+      }
+      y += 6;
+    }
   }
   function pdfBulletList(items){
     doc.setFont(FONT,'normal'); doc.setFontSize(SIZE); doc.setTextColor(17,17,17);
     (items.length?items:['—']).forEach(text=>{
-      const lines = doc.splitTextToSize(text, CONTENT_W-14);
+      const w = contentW()-16;
+      const lines = doc.splitTextToSize(text, w);
       const totalH = lines.length*LH;
       ensure(totalH);
-      doc.text('•', MARGIN, y+9);
-      lines.forEach((line,i)=> doc.text(line, MARGIN+14, y+i*LH+9));
+      doc.text('•', MARGIN, y+SIZE*0.78);
+      justifiedBlock(text, MARGIN+16, w, SIZE);
       y += totalH;
     });
     y += 6;
   }
+  // A very long label (e.g. "Details of Bloom Taxonomy, Knowledge Profile,
+  // Complex Engineering Problems & Activities:") can't share a line with its
+  // value without running out of room — it gets its own line(s) instead, with
+  // the value directly beneath, rather than cramming a near-zero-width value
+  // into whatever space happens to be left.
   function pdfKV(label, value){
     doc.setFont(FONT,'bold'); doc.setFontSize(SIZE); doc.setTextColor(17,17,17);
     const labelText = label+': ';
     const labelW = doc.getTextWidth(labelText);
-    doc.setFont(FONT,'normal');
-    const lines = doc.splitTextToSize(String(value??'—')||'—', CONTENT_W-labelW);
-    const totalH = Math.max(lines.length,1)*LH;
-    ensure(totalH);
-    doc.setFont(FONT,'bold');
-    doc.text(labelText, MARGIN, y+9);
-    doc.setFont(FONT,'normal');
-    lines.forEach((line,i)=> doc.text(line, MARGIN+labelW, y+i*LH+9));
-    y += totalH;
+    const inline = labelW <= contentW()*0.42;
+    if(inline){
+      doc.setFont(FONT,'normal');
+      const lines = doc.splitTextToSize(String(value??'—')||'—', contentW()-labelW);
+      const totalH = Math.max(lines.length,1)*LH;
+      ensure(totalH);
+      doc.setFont(FONT,'bold');
+      doc.text(labelText, MARGIN, y+9);
+      doc.setFont(FONT,'normal');
+      lines.forEach((line,i)=> doc.text(line, MARGIN+labelW, y+i*LH+9));
+      y += totalH;
+    } else {
+      const labelLines = doc.splitTextToSize(label+':', contentW());
+      ensure(labelLines.length*LH);
+      labelLines.forEach((line,i)=> doc.text(line, MARGIN, y+i*LH+9));
+      y += labelLines.length*LH;
+      doc.setFont(FONT,'normal');
+      const valueLines = doc.splitTextToSize(String(value??'—')||'—', contentW());
+      ensure(valueLines.length*LH);
+      valueLines.forEach((line,i)=> doc.text(line, MARGIN, y+i*LH+9));
+      y += valueLines.length*LH;
+    }
   }
-  function pdfTable(head, body, columnStyles){
+  // Groups consecutive bulleted/numbered blocks into one hanging-indent list
+  // render (proper bibliography style — wrapped lines align under the text,
+  // not back at the margin), while plain paragraphs render on their own.
+  function pdfBlocks(html){
+    const blocks = htmlBlocks(html);
+    let i = 0;
+    while(i < blocks.length){
+      if(blocks[i].bullet || blocks[i].ordered){
+        const group = [];
+        while(i<blocks.length && (blocks[i].bullet||blocks[i].ordered)){ group.push(blocks[i].text); i++; }
+        pdfBulletList(group);
+      } else {
+        pdfParagraph(blocks[i].text);
+        i++;
+      }
+    }
+  }
+
+  const TABLE_SIZE = 10;
+  // draws a small vector checkmark centered in a cell — the ✓ glyph isn't in
+  // the standard PDF Times-Roman character set and renders as a blank box
+  function drawCheck(cx, cy){
+    doc.setDrawColor(31,138,95); doc.setLineWidth(1.4);
+    doc.line(cx-3.6, cy, cx-1.1, cy+2.8);
+    doc.line(cx-1.1, cy+2.8, cx+3.8, cy-3.6);
+  }
+  /* head/body: standard autoTable arrays. opts:
+     - columnStyles: per-column autoTable style overrides (cellWidth, halign, …)
+     - justifyCols: column indices whose text should be fully justified (for
+       genuinely paragraph-length cell content, e.g. CO descriptions). This
+       uses autoTable's own built-in halign:'justify' rather than a custom
+       redraw, so the exact same text/width autoTable already used to compute
+       the row's height is what gets justified — no risk of the two disagreeing
+       and text overflowing past the cell/row like a hand-rolled redraw could.
+     - checkCols: column indices where the literal string "✓" should be drawn
+       as a vector checkmark instead of relying on the font's glyph */
+  function pdfTable(head, body, opts){
+    opts = opts || {};
     ensure(LH*2);
+    const columnStyles = {};
+    Object.entries(opts.columnStyles||{}).forEach(([k,v])=>{ columnStyles[k] = {...v}; });
+    (opts.justifyCols||[]).forEach(ci=>{
+      columnStyles[ci] = {...(columnStyles[ci]||{}), halign:'justify'};
+    });
     doc.autoTable({
       head:[head], body, startY:y,
       margin:{left:MARGIN, right:MARGIN, bottom:MARGIN+FOOTER_RESERVE},
-      styles:{font:FONT, fontSize:9, cellPadding:3, lineColor:[150,150,150], lineWidth:0.5, valign:'top', textColor:[17,17,17]},
-      headStyles:{fillColor:[13,31,54], textColor:255, fontStyle:'bold', fontSize:9},
+      styles:{font:FONT, fontSize:TABLE_SIZE, cellPadding:4, lineColor:[150,150,150], lineWidth:0.5, valign:'top', textColor:[17,17,17], overflow:'linebreak'},
+      headStyles:{fillColor:[13,31,54], textColor:255, fontStyle:'bold', fontSize:TABLE_SIZE, halign:'left'},
       alternateRowStyles:{fillColor:[251,252,254]},
-      columnStyles: columnStyles||{},
+      columnStyles,
       theme:'grid',
+      willDrawCell:(data)=>{
+        if(data.section!=='body') return;
+        if(opts.checkCols && opts.checkCols.includes(data.column.index) && data.cell.raw==='✓') data.cell.text = [];
+      },
+      didDrawCell:(data)=>{
+        if(data.section!=='body') return;
+        const cell = data.cell;
+        if(opts.checkCols && opts.checkCols.includes(data.column.index) && cell.raw==='✓'){
+          drawCheck(cell.x+cell.width/2, cell.y+cell.height/2);
+        }
+      },
     });
-    y = doc.lastAutoTable.finalY + 10;
+    y = doc.lastAutoTable.finalY + 12;
   }
-  function pdfBlocks(html){
-    htmlBlocks(html).forEach(b => pdfParagraph((b.bullet||b.ordered?'• ':'')+b.text));
-  }
+
+  /* PDF-only display helpers: a "no CP/WP"/"no CA/EA" outcome shows as a
+     plain dash in the printed table, rather than the descriptive label used
+     in the app and the Word export. */
+  function cpwpCell(co){ return co.cpwp.includes('NoCEP') ? '-' : (co.cpwp.join(', ')||'-'); }
+  function caeaCell(co){ return co.caea.includes('NoCAEA') ? '-' : (co.caea.join(', ')||'-'); }
 
   /* ---------- content ---------- */
   const m = state.meta;
@@ -512,8 +639,11 @@ async function exportPdfFile(){
   pdfH3('Course Outcomes (COs)');
   pdfTable(
     ['No.','COs','BT','CP/WP','CA/EA','KP/WK','AT','DM&A'],
-    state.cos.map(co=>[co.label, co.text||'—', co.bt.join(', ')||'—', cpwpLabel(co), caeaLabel(co), co.kpwk.join(', ')||'—', coAtLabel(co), coDmaLabel(co)]),
-    {0:{cellWidth:26}}
+    state.cos.map(co=>[co.label, co.text||'—', co.bt.join(', ')||'-', cpwpCell(co), caeaCell(co), co.kpwk.join(', ')||'-', coAtLabel(co), coDmaLabel(co)]),
+    { justifyCols:[1,7], columnStyles:{
+        0:{cellWidth:24}, 1:{cellWidth:132}, 2:{cellWidth:52}, 3:{cellWidth:44},
+        4:{cellWidth:44}, 5:{cellWidth:42}, 6:{cellWidth:48}, 7:{cellWidth:'auto'},
+    }}
   );
   pdfParagraph("COs– Course Outcome; BT– Learning Domain Level (Cognitive/Affective/Psychomotor); CP/WP– Complex Engineering Problems; CA/EA– Complex Engineering Activities; AT– Assessment Tools; KP/WK– Knowledge Profile; DM&A– Delivery Methods & Activities.");
   const atOptions = currentATOptions();
@@ -521,12 +651,15 @@ async function exportPdfFile(){
   pdfParagraph(`AT (${m.courseMode||'Theory'}): ${atOptions.map(a=>`${a.code}– ${a.label}`).join('; ')}${customATs.length? '; '+customATs.join('; ') : ''}`);
 
   pdfH3('Mapping of COs with Program Outcomes (POs)');
+  const poColStyles = {0:{cellWidth:56}};
+  PO_VALUES.forEach((_,i)=>{ poColStyles[i+1] = {cellWidth:'auto', halign:'center'}; });
   pdfTable(
     ['CO', ...PO_VALUES],
     state.cos.map(co=>{
       const map = state.poMapping.find(p=>p.coId===co.id);
       return [co.label, ...PO_VALUES.map(pv => map && map.po===pv ? '✓' : '')];
-    })
+    }),
+    { checkCols:[1,2,3,4,5,6,7,8,9,10,11,12], columnStyles: poColStyles }
   );
 
   pdfH2('Part C: Teaching Learning Approach');
@@ -534,7 +667,8 @@ async function exportPdfFile(){
   pdfKV('Last Class of Semester', fmtDate(state.semesterEnd));
   pdfTable(
     ['Week','Topics','Suggested Activity & Teaching Strategy','Assessment Strategy','Corresponding COs'],
-    state.plan.map(r=>[r.week, plainText(r.topics)||'—', plainText(r.activity)||'—', planAssessLabel(r), planCoLabel(r)])
+    state.plan.map(r=>[r.week, plainText(r.topics)||'—', plainText(r.activity)||'—', planAssessLabel(r), planCoLabel(r)]),
+    { justifyCols:[1,2], columnStyles:{0:{cellWidth:32}, 1:{cellWidth:150}, 2:{cellWidth:150}, 3:{cellWidth:60}, 4:{cellWidth:'auto'}} }
   );
 
   pdfH2('Part D: Assessment Approach');
@@ -548,7 +682,7 @@ async function exportPdfFile(){
     assessBody.push([isFE?'Final Exam (FE)':'Continuous Internal Assessment (CIA)', isFE?'':`${t.label} (${t.code})`, v||'—']);
   });
   assessBody.push(['Total','', Math.round(totalMarks)+'%']);
-  pdfTable(['Assessment Components','','Marks Distribution'], assessBody);
+  pdfTable(['Assessment Components','','Marks Distribution'], assessBody, { columnStyles:{0:{cellWidth:180},1:{cellWidth:180},2:{cellWidth:'auto'}} });
 
   pdfH3('Assessment Schedule');
   pdfTable(['Assessment Tool','Scheduled For'], tools.map(t=>[`${t.label} (${t.code})`, (state.assessment.schedule[t.code]||[]).join(', ')||'—']));
@@ -569,15 +703,12 @@ async function exportPdfFile(){
   pdfH2('Part F: Additional Information');
   ADDITIONAL_FIELDS.forEach(f => pdfKV(f.label, state.additional[f.key]));
 
-  /* ---------- footer on every page: left dept text, right page number ---------- */
+  /* ---------- footer: page number only, right-aligned ---------- */
   const pageCount = doc.getNumberOfPages();
   for(let i=1;i<=pageCount;i++){
     doc.setPage(i);
-    doc.setDrawColor(170,170,170); doc.setLineWidth(0.5);
-    doc.line(MARGIN, PAGE_H-MARGIN+8, PAGE_W-MARGIN, PAGE_H-MARGIN+8);
     doc.setFont(FONT,'normal'); doc.setFontSize(9); doc.setTextColor(85,85,85);
-    doc.text('Department of CSE/UITS', MARGIN, PAGE_H-MARGIN+20);
-    doc.text(String(i), PAGE_W-MARGIN, PAGE_H-MARGIN+20, {align:'right'});
+    doc.text(String(i), pageW()-MARGIN, pageH()-MARGIN+20, {align:'right'});
   }
 
   const name = (state.meta.courseCode || 'course-outline').replace(/[^a-z0-9]+/gi,'-').toLowerCase();

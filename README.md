@@ -81,6 +81,28 @@ Management System Lab*.
 - **Download PDF now produces a real .pdf file directly** — no more print dialog. It's built with jsPDF + AutoTable (Times New Roman, 12pt, 1.5 line spacing, justified paragraphs, A4 with 1-inch margins), and every page gets a footer: **"Department of CSE/UITS"** on the left, **page number** on the right.
 - The **Preview** button still shows the in-app formatted view (unchanged) — only the actual PDF download changed.
 
+## PDF quality pass
+
+- **Justified text** now applies to genuinely paragraph-length content — CO descriptions, Topics, Suggested Activity & Teaching Strategy, and all of Part E's references — using a custom cell renderer (autoTable can't justify by itself), not just the plain paragraphs outside tables.
+- **Consistent Times New Roman throughout**; tables now render at 10.5pt (up from 9pt) for a noticeably more readable, official look, while headings/body stay at 12pt.
+- **Fixed the checkmark** in the PO Mapping table — the ✓ character isn't part of the standard PDF Times-Roman font, so it was rendering as a blank box. It's now drawn as a small vector tick, so it always shows correctly.
+- **Text-heavy columns are wider** (CO description, Topics, Suggested Activity, DM&A) and short/code columns (No., BT, CP/WP, CA/EA, KP/WK) are narrower, instead of splitting the row evenly.
+- **"No CP/WP" / "No CA/EA" now show as a plain "-"** in the PDF table (the app itself still shows the full label — this simplification is PDF-only).
+- **Fixed choppy references** — rich-text content typed across several lines was being treated as one tiny paragraph per line; it's now correctly reassembled into a single flowing, justified paragraph (a blank line still starts a genuine new paragraph, exactly as before).
+- **Footer simplified** — dropped "Department of CSE/UITS" and the divider line; each page now shows only its page number, bottom-right.
+
+## Critical PDF fixes (formatting reliability)
+
+Three real bugs, found and fixed:
+
+- **Justification wasn't actually justifying anything.** The code was calling jsPDF's text-drawing once per pre-wrapped line, which makes jsPDF treat every single line as a lone "last line" of its own call — and the last line of justified text is conventionally left-aligned, so nothing ever stretched. Fixed by handing jsPDF the *whole* paragraph plus a max-width in one call and letting it wrap and justify internally, which is also exactly what jsPDF-AutoTable's own source does for `halign:'justify'` — confirmed against the library's actual code before relying on it.
+- **Table cells could overflow past their row/border**, as seen with a long CO description. The previous approach manually re-measured and redrew "justified" text inside table cells with its own width/line-height math — if that math drifted even slightly from what AutoTable used to size the row in the first place, text would spill out. That whole approach is gone; text-heavy table columns (CO description, Topics, Suggested Activity) now use AutoTable's built-in `halign:'justify'`, which is guaranteed to size the row from the exact same text and width it renders — same source of truth, so it can't disagree with itself and overflow.
+- **A long field label (e.g. "Details of Bloom Taxonomy, Knowledge Profile, Complex Engineering Problems & Activities:") left the value with almost no room**, so it appeared to float off to the side. Long labels now wrap onto their own line(s), with the value cleanly on the line below, instead of being squeezed beside it.
+- References (Supplementary Readings, etc.) are now rendered as a proper hanging-indent bibliography — bullet at the margin, wrapped lines aligned under the text rather than back at the margin, and fully justified.
+- The checkmark and "no CP/WP"/"no CA/EA" → dash fixes from the previous pass are unaffected and still in place.
+
+AutoTable's own pagination (splitting a table across pages, repeating the header row) was never touched — it was always reliable; the risk was only ever in the custom cell-redraw code, which is now removed entirely in favor of the library's native, tested behavior.
+
 ## Previous update
 
 - BT/CP-WP/CA-EA/KP-WK show full names in-app with codes-only in exports; filled cells turn green; PO is now PO(a)–PO(l); custom Assessment Tools require a PSAC note; dropdowns float freely; references start empty; fixed the Word-export CDN link; Word export uses Times New Roman 12pt with a left institution/semester footer and a right page number.
