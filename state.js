@@ -20,6 +20,8 @@ const DAYS = ['Saturday','Sunday','Monday','Tuesday','Wednesday','Thursday','Fri
 const AT_THEORY = [
   {code:'CT1', label:'Class Test 01'},
   {code:'CT2', label:'Class Test 02'},
+  {code:'CT3', label:'Class Test 03'},
+  {code:'CT4', label:'Class Test 04'},
   {code:'MT',  label:'Mid Term'},
   {code:'F',   label:'Final'},
   {code:'A',   label:'Assignment'},
@@ -36,6 +38,17 @@ const AT_ALL = [...AT_THEORY, ...AT_LAB]; // used for label look-ups regardless 
 function currentATOptions(){
   return state.meta.courseMode === 'Lab/Sessional' ? AT_LAB : AT_THEORY;
 }
+
+/* Central option lists (single source of truth for UI + JSON import) */
+const COURSE_CATEGORIES = [
+  'Basic Science and Mathematics','GED','Core Courses','Elective I','Elective II',
+  'Specialization - Intelligent Systems','Specialization - Software Engineering',
+  'Specialization - Network & Security','Specialization - Systems and Hardware',
+];
+const COURSE_MODES = ['Theory','Lab/Sessional'];
+const PROGRAMS = ['BSc. in CSE','MSc. in CSE'];
+const LEVELS = ['1st','2nd','3rd','4th','5th','6th','7th','8th'].map(n=>n+' Semester');
+const SESSION_TERMS = ['Autumn','Spring','Fall','Summer'];
 
 const DMA_DEFAULTS = [
   'Lecture','Demonstration','Group Work','Problem Solving Session',
@@ -230,8 +243,8 @@ function newCO(index){
 function newPlanRow(week){
   return {id:uid(), week:String(week), topics:'', activity:'', assessment:[], assessmentCustom:[], cos:[]};
 }
-function newBloomCol(name){
-  return {id:uid(), name: name||'', values:{Remember:'',Understand:'',Apply:'',Analyze:'',Evaluate:'',Create:''}};
+function newPatternValues(){
+  return {Remember:'',Understand:'',Apply:'',Analyze:'',Evaluate:'',Create:''};
 }
 
 function defaultState(){
@@ -250,7 +263,7 @@ function defaultState(){
     teachers:[newTeacher()],
     rationale:'',
     courseContents:'',
-    objectives:[''],
+    objectives:['','','','',''],
 
     cos: cos,
 
@@ -267,16 +280,9 @@ function defaultState(){
       schedule:{},      // { 'CT1': 'Week 4', ... } keyed by AT code present in COs
     },
 
-    bloomCols: [
-      {id:uid(), name:'Attendance & Class Participation (10)', values:{Remember:'',Understand:'',Apply:'',Analyze:'',Evaluate:'',Create:''}},
-      {id:uid(), name:'Class Performance (10)', values:{Remember:'',Understand:'5%',Apply:'5%',Analyze:'',Evaluate:'',Create:''}},
-      {id:uid(), name:'Lab Test-1 (10)', values:{Remember:'',Understand:'',Apply:'10%',Analyze:'',Evaluate:'',Create:''}},
-      {id:uid(), name:'Lab Final (20)', values:{Remember:'',Understand:'',Apply:'10%',Analyze:'10%',Evaluate:'',Create:''}},
-      {id:uid(), name:'Quiz (20)', values:{Remember:'3%',Understand:'4%',Apply:'5%',Analyze:'4%',Evaluate:'2%',Create:'2%'}},
-      {id:uid(), name:'Lab Report (10)', values:{Remember:'',Understand:'5%',Apply:'',Analyze:'',Evaluate:'5%',Create:''}},
-      {id:uid(), name:'Project Presentation (10)', values:{Remember:'',Understand:'',Apply:'',Analyze:'',Evaluate:'5%',Create:'5%'}},
-      {id:uid(), name:'Viva (10)', values:{Remember:'5%',Understand:'',Apply:'',Analyze:'',Evaluate:'5%',Create:''}},
-    ],
+    // Section 20 values keyed by assessment component code → {Remember:'',...}.
+    // The columns themselves are derived (see patternColumns()), never stored.
+    patternValues:{},
 
     references:{
       recommended:'',
@@ -334,3 +340,158 @@ function setPath(obj, path, value){
 }
 function findById(arr, id){ return arr.find(x=>x.id===id); }
 function indexById(arr, id){ return arr.findIndex(x=>x.id===id); }
+
+
+/* ---------- derived assessment data ---------- */
+/* All assessment components currently in use, in the app's definition order
+   (AT_ALL order, custom tools after, Final last). Sources: Part B → AT per CO. */
+function derivedAssessmentTools(){
+  const map = new Map();
+  state.cos.forEach(co=>{
+    co.at.forEach(code=>{
+      const def = AT_ALL.find(a=>a.code===code);
+      map.set(code, def? def.label : code);
+    });
+    co.atCustom.forEach(c=>{ map.set(c, c); });
+  });
+  const rank = (code)=>{ const i = AT_ALL.findIndex(a=>a.code===code); return i<0 ? AT_ALL.length : i; };
+  const tools = [...map.entries()].map(([code,label])=>({code,label}))
+    .sort((a,b)=> rank(a.code)-rank(b.code));
+  const feIdx = tools.findIndex(t=>t.code==='F');
+  if(feIdx>-1) tools.push(tools.splice(feIdx,1)[0]);
+  return tools;
+}
+
+/* Section 20 columns: union of (A) components used in Section 19 (marks entered)
+   and (B) AT selected in Part B Section 16, de-duplicated, Attendance excluded. */
+function patternColumns(){
+  const tools = derivedAssessmentTools();
+  const known = new Map(tools.map(t=>[t.code,t]));
+  const used = new Set();
+  tools.forEach(t=>{ if(String(state.assessment.rowMarks[t.code]||'').trim()) used.add(t.code); }); // Source A
+  tools.forEach(t=>used.add(t.code));                                                                // Source B
+  return tools.filter(t=> used.has(t.code) && known.has(t.code) && !/^attendance$/i.test(t.code) && !/^attendance$/i.test(t.label));
+}
+
+/* Section 19 total — always derived from current state */
+function computeAssessmentTotal(){
+  const n = (v)=>{ const x = parseFloat(v); return isFinite(x)? x : 0; };
+  let total = n(state.assessment.attendanceMarks);
+  derivedAssessmentTools().forEach(t=>{ total += n(state.assessment.rowMarks[t.code]); });
+  return total;
+}
+
+/* ---------- JSON import: current schema is authoritative ---------- */
+function normalizeLoadedState(loaded){
+  if(!loaded || typeof loaded!=='object' || Array.isArray(loaded)) throw new Error('Not an outline object.');
+  const base = defaultState();
+  const isObj = (v)=> v && typeof v==='object' && !Array.isArray(v);
+  const str = (v, d='')=> typeof v==='string' ? v : (typeof v==='number' ? String(v) : d);
+  const strArr = (v)=> Array.isArray(v) ? v.filter(x=>typeof x==='string') : [];
+  const inSet = (v, set)=> set.includes(v) ? v : '';
+  /* generic: keep only keys present in the template, coerce to template types */
+  const pick = (tpl, src)=>{
+    if(Array.isArray(tpl)) return Array.isArray(src) ? src : tpl;
+    if(isObj(tpl)){
+      const out = {};
+      Object.keys(tpl).forEach(k=>{ out[k] = pick(tpl[k], isObj(src)? src[k] : undefined); });
+      return out;
+    }
+    if(typeof tpl==='string') return str(src, tpl);
+    return typeof src===typeof tpl ? src : tpl;
+  };
+  const L = isObj(loaded) ? loaded : {};
+  const out = pick(
+    {rationale:'', courseContents:'', semesterStart:base.semesterStart, semesterEnd:base.semesterEnd,
+     references:base.references, additional:base.additional}, L);
+
+  // meta
+  const m = pick(base.meta, L.meta);
+  m.prerequisites = strArr(isObj(L.meta)? L.meta.prerequisites : []);
+  m.courseCategory = inSet(m.courseCategory, COURSE_CATEGORIES);
+  m.courseMode = inSet(m.courseMode, COURSE_MODES);
+  m.program = inSet(m.program, PROGRAMS);
+  m.level = inSet(m.level, LEVELS);
+  m.sessionTerm = inSet(m.sessionTerm, SESSION_TERMS);
+  out.meta = m;
+
+  const schedule = (arr, dflt)=>{
+    const rows = Array.isArray(arr) ? arr.filter(isObj).map(r=>{
+      const x = pick(newScheduleRow(), r); x.id = str(r.id) || uid(); x.day = inSet(x.day, DAYS); return x;
+    }) : [];
+    return rows.length ? rows : dflt;
+  };
+  out.classSchedule = schedule(L.classSchedule, base.classSchedule);
+  out.counselingSchedule = schedule(L.counselingSchedule, base.counselingSchedule);
+
+  const teachers = Array.isArray(L.teachers) ? L.teachers.filter(isObj).map(t=>{
+    const x = pick(newTeacher(), t); x.id = str(t.id) || uid(); return x;
+  }) : [];
+  out.teachers = teachers.length ? teachers : base.teachers;
+
+  const objs = strArr(L.objectives);
+  out.objectives = objs.length ? objs : base.objectives;
+
+  // course outcomes
+  const cpCodes = [NO_CEP_OPTION.code, ...CPWP_DEFAULTS.map(o=>o.code)];
+  const caCodes = [NO_CAEA_OPTION.code, ...CAEA_DEFAULTS.map(o=>o.code)];
+  const btCodes = BT_ALL.map(o=>o.code), kpCodes = KPWK_DEFAULTS.map(o=>o.code);
+  const atCodes = AT_ALL.map(o=>o.code);
+  const cos = Array.isArray(L.cos) ? L.cos.filter(isObj).map((c,i)=>{
+    const x = pick(newCO(i+1), c);
+    x.id = str(c.id) || uid();
+    x.bt = strArr(c.bt).filter(v=>btCodes.includes(v));
+    x.cpwp = strArr(c.cpwp).filter(v=>cpCodes.includes(v));
+    x.caea = strArr(c.caea).filter(v=>caCodes.includes(v));
+    x.kpwk = strArr(c.kpwk).filter(v=>kpCodes.includes(v));
+    x.atCustom = strArr(c.atCustom).filter(v=>!atCodes.includes(v));
+    x.at = strArr(c.at).filter(v=>atCodes.includes(v) || x.atCustom.includes(v));
+    x.dmaCustom = strArr(c.dmaCustom).filter(v=>!DMA_DEFAULTS.includes(v));
+    x.dma = strArr(c.dma).filter(v=>DMA_DEFAULTS.includes(v) || x.dmaCustom.includes(v));
+    return x;
+  }) : [];
+  out.cos = cos.length ? cos : base.cos;
+  out.cos.forEach((c,i)=> c.label = 'CO'+(i+1));
+
+  const pm = Array.isArray(L.poMapping) ? L.poMapping.filter(isObj) : [];
+  out.poMapping = out.cos.map(c=>{
+    const f = pm.find(x=>x.coId===c.id);
+    return {coId:c.id, po: f && PO_VALUES.includes(f.po) ? f.po : 'PO(a)'};
+  });
+
+  const validTools = new Set([...atCodes, ...out.cos.flatMap(c=>c.atCustom)]);
+  const usedTools = new Set(out.cos.flatMap(c=>c.at));
+  const labels = out.cos.map(c=>c.label);
+  const plan = Array.isArray(L.plan) ? L.plan.filter(isObj).map((r,i)=>{
+    const x = pick(newPlanRow(i+1), r);
+    x.id = str(r.id) || uid();
+    x.assessmentCustom = strArr(r.assessmentCustom).filter(v=>out.cos.some(c=>c.atCustom.includes(v)));
+    x.assessment = strArr(r.assessment).filter(v=>usedTools.has(v));
+    x.cos = strArr(r.cos).filter(v=>labels.includes(v));
+    return x;
+  }) : [];
+  out.plan = plan.length ? plan : base.plan;
+
+  // assessment (marks / schedule only for currently valid components; Attendance stays separate)
+  const A = isObj(L.assessment) ? L.assessment : {};
+  const rowMarks = {}, schedule2 = {};
+  if(isObj(A.rowMarks)) Object.keys(A.rowMarks).forEach(k=>{ if(validTools.has(k)) rowMarks[k] = str(A.rowMarks[k]); });
+  if(isObj(A.schedule)) Object.keys(A.schedule).forEach(k=>{
+    if(!validTools.has(k)) return;
+    const v = Array.isArray(A.schedule[k]) ? A.schedule[k] : [A.schedule[k]];
+    schedule2[k] = v.filter(x=>SCHEDULE_OPTIONS.includes(x));
+  });
+  out.assessment = {attendanceMarks:str(A.attendanceMarks), rowMarks, schedule:schedule2};
+
+  // Section 20 values — only for valid components; columns are re-derived at render time
+  const pv = {};
+  if(isObj(L.patternValues)) Object.keys(L.patternValues).forEach(k=>{
+    if(!validTools.has(k) || !isObj(L.patternValues[k])) return;
+    const row = newPatternValues();
+    BLOOM_ROWS.forEach(r=>{ row[r] = str(L.patternValues[k][r]); });
+    pv[k] = row;
+  });
+  out.patternValues = pv;
+
+  return Object.assign(base, out);
+}

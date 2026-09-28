@@ -14,8 +14,8 @@ const PANEL_RENDERERS = {
 let activeTab = 'info';
 let openDD = null; // id of currently open dropdown-checkbox panel, if any
 
-function renderPanel(id){ PANEL_RENDERERS[id](); reopenDD(); }
-function renderAll(){ Object.keys(PANEL_RENDERERS).forEach(id => PANEL_RENDERERS[id]()); reopenDD(); }
+function renderPanel(id){ PANEL_RENDERERS[id](); reopenDD(); autosizeAll(); }
+function renderAll(){ Object.keys(PANEL_RENDERERS).forEach(id => PANEL_RENDERERS[id]()); reopenDD(); autosizeAll(); }
 
 /* ---------- floating dropdown-checkbox portal ----------
    A single shared panel is appended to <body> and positioned with
@@ -28,6 +28,8 @@ function openDropdownPortal(ddid){
   if(!toggle){ closeDropdownPortal(); return; }
 
   portal.innerHTML = buildDDPanelHTML(ddid);
+  const cfgOpts = (DD_REGISTRY[ddid]||{}).opts || [];
+  portal.classList.toggle('wide', !!(cfgOpts[0] && cfgOpts[0].items));
   portal.classList.add('open');
   openDD = ddid;
 
@@ -110,10 +112,7 @@ function computeCompletion(){
   perTab.teaching = tallyOf([], state.plan.length, planFilled);
 
   // Part D
-  const tools = derivedAssessmentTools();
-  let total = parseFloat(state.assessment.attendanceMarks)||0;
-  tools.forEach(t=> total += parseFloat(state.assessment.rowMarks[t.code])||0 );
-  perTab.assessment = tallyOf([Math.round(total)===100]);
+  perTab.assessment = tallyOf([Math.round(computeAssessmentTotal())===100]);
 
   // Part E
   perTab.references = tallyOf([
@@ -165,8 +164,12 @@ function toast(msg){
 }
 
 /* ---------- generic bind handling (input/change events) ---------- */
+function autosizeTextarea(el){ el.style.height='auto'; el.style.height = el.scrollHeight+'px'; }
+function autosizeAll(){ document.querySelectorAll('textarea.autosize').forEach(autosizeTextarea); }
+
 document.addEventListener('input', (e)=>{
   const t = e.target;
+  if(t.matches('textarea.autosize')) autosizeTextarea(t);
 
   if(t.matches('[data-bind]')){
     const val = t.type==='checkbox' ? t.checked : t.value;
@@ -184,17 +187,14 @@ document.addEventListener('input', (e)=>{
     const key = t.dataset.bindMark;
     if(key==='attendance') state.assessment.attendanceMarks = t.value;
     else state.assessment.rowMarks[key] = t.value;
+    updateAssessmentTotalUI();
     updateProgressUI();
     return;
   }
-  if(t.matches('[data-bind-bloomcol]')){
-    const col = findById(state.bloomCols, t.dataset.bindBloomcol);
-    if(col) col.name = t.value;
-    return;
-  }
-  if(t.matches('[data-bind-bloomval]')){
-    const col = findById(state.bloomCols, t.dataset.bindBloomval);
-    if(col) col.values[t.dataset.bloomrow] = t.value;
+  if(t.matches('[data-bind-pattern]')){
+    const code = t.dataset.bindPattern;
+    if(!state.patternValues[code]) state.patternValues[code] = newPatternValues();
+    state.patternValues[code][t.dataset.bloomrow] = t.value;
     return;
   }
   if(t.matches('[data-rte-bind]')){
@@ -441,13 +441,6 @@ function handleAction(el){
       break;
     }
 
-    case 'addBloomCol': state.bloomCols.push(newBloomCol('New Column')); break;
-    case 'removeBloomCol': {
-      const i = indexById(state.bloomCols, el.dataset.rowId);
-      if(i>-1) state.bloomCols.splice(i,1);
-      break;
-    }
-
     default: return;
   }
   renderPanel(activeTab);
@@ -475,7 +468,7 @@ document.getElementById('fileLoadJson').addEventListener('change', (e)=>{
   reader.onload = () => {
     try{
       const loaded = JSON.parse(reader.result);
-      state = Object.assign(defaultState(), loaded);
+      state = normalizeLoadedState(loaded);
       renderAll();
       document.querySelectorAll('.panel').forEach(p=> p.classList.toggle('active', p.dataset.panel===activeTab));
       updateProgressUI();

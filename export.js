@@ -97,8 +97,8 @@ function buildPrintView(){
     <tr><td>${escapeHtml(t.label)} (${escapeHtml(t.code)})</td><td>${escapeHtml((state.assessment.schedule[t.code]||[]).join(', ')||'—')}</td></tr>`).join('')
     || `<tr><td colspan="2">—</td></tr>`;
 
-  const bloomHeaders = state.bloomCols.map(c=>`<th>${escapeHtml(c.name)}</th>`).join('');
-  const bloomRows = BLOOM_ROWS.map(rk=>`<tr><td>${rk}</td>${state.bloomCols.map(c=>`<td style="text-align:center;">${escapeHtml(c.values[rk]||'')}</td>`).join('')}</tr>`).join('');
+  const bloomHeaders = patternColumns().map(c=>`<th>${escapeHtml(c.label)} (${escapeHtml(c.code)})</th>`).join('');
+  const bloomRows = BLOOM_ROWS.map(rk=>`<tr><td>${rk}</td>${patternColumns().map(c=>`<td style="text-align:center;">${escapeHtml(((state.patternValues[c.code]||{})[rk])||'')}</td>`).join('')}</tr>`).join('');
 
   const atLegend = atOptions.map(a=>`${a.code}– ${a.label}`).join('; ') + (customATs.length? '; '+customATs.map(escapeHtml).join('; ') : '');
 
@@ -291,8 +291,8 @@ async function exportDocx(){
   assessRows.push(['Total','', Math.round(total)+'%']);
   const scheduleRows = tools.map(t=>[t.label+' ('+t.code+')', (state.assessment.schedule[t.code]||[]).join(', ')||'—']);
 
-  const bloomHeaders = ["Bloom's Category", ...state.bloomCols.map(c=>c.name)];
-  const bloomRows = BLOOM_ROWS.map(rk => [rk, ...state.bloomCols.map(c=>c.values[rk]||'')]);
+  const bloomHeaders = ["Bloom's Category", ...patternColumns().map(c=>c.label+' ('+c.code+')')];
+  const bloomRows = BLOOM_ROWS.map(rk => [rk, ...patternColumns().map(c=>((state.patternValues[c.code]||{})[rk])||'')]);
 
   const gradingRows = GRADING_TABLE.map(r=>[r[0],r[1],r[2]]);
   const atLegendText = atOptions.map(a=>`${a.code}– ${a.label}`).join('; ') + (customATs.length? '; '+customATs.join('; ') : '');
@@ -688,7 +688,7 @@ async function exportPdfFile(){
   pdfTable(['Assessment Tool','Scheduled For'], tools.map(t=>[`${t.label} (${t.code})`, (state.assessment.schedule[t.code]||[]).join(', ')||'—']));
 
   pdfH3('Assessment Pattern — Continuous Internal Evaluation (100 Marks)');
-  pdfTable(["Bloom's Category", ...state.bloomCols.map(c=>c.name)], BLOOM_ROWS.map(rk=>[rk, ...state.bloomCols.map(c=>c.values[rk]||'')]));
+  pdfTable(["Bloom's Category", ...patternColumns().map(c=>c.label+' ('+c.code+')')], BLOOM_ROWS.map(rk=>[rk, ...patternColumns().map(c=>((state.patternValues[c.code]||{})[rk])||'')]));
   pdfParagraph("*The percentage distribution of Bloom's categories in the assessment tools may vary by ±5%.");
 
   pdfH3('Grading System');

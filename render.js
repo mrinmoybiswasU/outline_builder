@@ -36,9 +36,8 @@ function ddCheckHTML(ddid, opts, selected, customArr, action, ctx, opts2){
 
   return `
   <div class="dd-check" data-ddid="${ddid}">
-    <button type="button" class="dd-check-toggle ${count?'has-selection':''}" data-dd-toggle="${ddid}">
-      <span>${count ? count+' selected' : 'Select…'}</span>
-      <svg width="10" height="6" viewBox="0 0 10 6"><path d="M0 0l5 6 5-6z" fill="currentColor"/></svg>
+    <button type="button" class="dd-check-toggle ${count?'has-selection':''}" data-dd-toggle="${ddid}" title="${count ? count+' selected — click to edit' : 'Select…'}" aria-label="${count ? count+' selected' : 'Select'}">
+      <svg width="10" height="6" viewBox="0 0 10 6" aria-hidden="true"><path d="M0 0l5 6 5-6z" fill="currentColor"/></svg>
     </button>
     <div class="dd-chips">${chips}</div>
   </div>`;
@@ -66,11 +65,11 @@ function buildDDPanelHTML(ddid){
   const isGrouped = opts.length && opts[0] && opts[0].items !== undefined;
   let optionRows;
   if(isGrouped){
-    optionRows = opts.map((grp, gi) => `
-      ${gi>0 ? '<div class="dd-group-sep"></div>' : ''}
-      <div class="dd-group-label">${escapeHtml(grp.group)}</div>
-      ${grp.items.map(renderOption).join('')}
-    `).join('');
+    optionRows = `<div class="dd-group-cols">${opts.map(grp => `
+      <div class="dd-group-col">
+        <div class="dd-group-label">${escapeHtml(grp.group)}</div>
+        ${grp.items.map(renderOption).join('')}
+      </div>`).join('')}</div>`;
   } else {
     optionRows = opts.map(renderOption).join('') || `<div class="hint" style="padding:6px 4px;">Nothing to choose from yet.</div>`;
   }
@@ -177,8 +176,7 @@ function renderInfoPanel(){
         <div class="field col-4"><label>Program <span class="req">*</span></label>
           <select data-bind="meta.program">
             <option value="">Select…</option>
-            <option ${s.program==='BSc. in CSE'?'selected':''}>BSc. in CSE</option>
-            <option ${s.program==='MSc. in CSE'?'selected':''}>MSc. in CSE</option>
+            ${PROGRAMS.map(p=>`<option ${s.program===p?'selected':''}>${escapeHtml(p)}</option>`).join('')}
           </select></div>
         <div class="field col-4"><label>Course Code <span class="req">*</span></label>
           <input type="text" data-bind="meta.courseCode" value="${escapeHtml(s.courseCode)}" placeholder="e.g., CSE 316"></div>
@@ -193,26 +191,23 @@ function renderInfoPanel(){
         <div class="field col-4"><label>Course Type — Category <span class="req">*</span></label>
           <select data-bind="meta.courseCategory">
             <option value="">Select…</option>
-            <option ${s.courseCategory==='GED'?'selected':''}>GED</option>
-            <option ${s.courseCategory==='Core Course'?'selected':''}>Core Course</option>
-            <option ${s.courseCategory==='Electives'?'selected':''}>Electives</option>
+            ${COURSE_CATEGORIES.map(c=>`<option ${s.courseCategory===c?'selected':''}>${escapeHtml(c)}</option>`).join('')}
           </select></div>
         <div class="field col-4"><label>Course Type — Mode <span class="req">*</span></label>
           <select data-bind="meta.courseMode">
             <option value="">Select…</option>
-            <option ${s.courseMode==='Theory'?'selected':''}>Theory</option>
-            <option ${s.courseMode==='Lab/Sessional'?'selected':''}>Lab/Sessional</option>
+            ${COURSE_MODES.map(c=>`<option ${s.courseMode===c?'selected':''}>${escapeHtml(c)}</option>`).join('')}
           </select></div>
         <div class="field col-4"><label>Year/Level/Semester/Term <span class="req">*</span></label>
           <select data-bind="meta.level">
             <option value="">Select…</option>
-            ${['1st','2nd','3rd','4th','5th','6th','7th','8th'].map(n=>`<option ${s.level===n+' Semester'?'selected':''}>${n} Semester</option>`).join('')}
+            ${LEVELS.map(n=>`<option ${s.level===n?'selected':''}>${n}</option>`).join('')}
           </select></div>
 
         <div class="field col-4"><label>Academic Session <span class="req">*</span></label>
           <select data-bind="meta.sessionTerm">
             <option value="">Select…</option>
-            ${['Autumn','Spring','Fall','Summer'].map(t=>`<option ${s.sessionTerm===t?'selected':''}>${t}</option>`).join('')}
+            ${SESSION_TERMS.map(t=>`<option ${s.sessionTerm===t?'selected':''}>${t}</option>`).join('')}
           </select></div>
         <div class="field col-4"><label>Session Year <span class="req">*</span></label>
           <input type="text" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" data-bind="meta.sessionYear" value="${escapeHtml(s.sessionYear)}" placeholder="e.g., 2025"></div>
@@ -339,15 +334,15 @@ function renderSkillPanel(){
     return `
     <tr data-row-id="${co.id}">
       <td class="co-label-cell">${co.label}</td>
-      <${fillTd(co.text.trim(), 'style="min-width:220px;"')}>
-        <textarea data-bind="cos.${idx}.text" placeholder="Describe this course outcome… (use **word** to bold a keyword)">${escapeHtml(co.text)}</textarea>
+      <${fillTd(co.text.trim())}>
+        <textarea class="autosize co-text" data-bind="cos.${idx}.text" placeholder="Describe this course outcome… (use **word** to bold a keyword)">${escapeHtml(co.text)}</textarea>
       </td>
-      <${fillTd(true, 'style="min-width:110px;"')}>
+      <${fillTd(true)}>
         <select data-po-select="${co.id}">
           ${PO_VALUES.map(p=>`<option value="${p}" ${mapping.po===p?'selected':''}>${p}</option>`).join('')}
         </select>
       </td>
-      <${fillTd(co.bt.length, 'style="min-width:170px;"')}>${ddCheckHTML('bt-'+co.id, BT_GROUPS, co.bt, [], 'toggleCoArr', {coId:co.id, field:'bt'}, {allowCustom:false, optionSeparator:': '})}</td>
+      <${fillTd(co.bt.length)}>${ddCheckHTML('bt-'+co.id, BT_GROUPS, co.bt, [], 'toggleCoArr', {coId:co.id, field:'bt'}, {allowCustom:false, optionSeparator:': '})}</td>
       <${fillTd(co.cpwp.length)}>${ddCheckHTML('cpwp-'+co.id, cpwpOptions, co.cpwp, [], 'toggleCoCPWP', {coId:co.id}, {allowCustom:false, note:cepNote})}</td>
       <${fillTd(co.caea.length)}>${ddCheckHTML('caea-'+co.id, caeaOptions, co.caea, [], 'toggleCoCAEA', {coId:co.id}, {allowCustom:false, note:caeaNote})}</td>
       <${fillTd(co.kpwk.length)}>${kpwkOptions.length ? ddCheckHTML('kpwk-'+co.id, kpwkOptions, co.kpwk, [], 'toggleCoArr', {coId:co.id, field:'kpwk'}, {allowCustom:false}) : `<span class="hint">Not applicable for ${escapeHtml(mapping.po)}</span>`}</td>
@@ -399,7 +394,8 @@ function renderSkillPanel(){
         <div>Pick the <strong>PO</strong> for each CO right here — the Knowledge Profile (KP/WK) choices automatically narrow to only the items that PO permits, and the Mapping table further down is built from this selection. A filled cell is tinted green so you can see progress at a glance. Use the <strong>?</strong> buttons in the table header for the official BAETE definitions.</div>
       </div>
       <div class="table-scroll">
-        <table class="obe-table">
+        <table class="obe-table co-table">
+          <colgroup><col style="width:5%"><col style="width:22%"><col style="width:9%"><col style="width:10%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:10%"><col style="width:10%"><col style="width:7%"></colgroup>
           <thead><tr>
             <th>No.</th><th>COs</th>
             <th>PO ${helpButtonHTML('po','Programme Outcomes (PO1–PO12)')}</th>
@@ -447,11 +443,11 @@ function renderTeachingPanel(){
 
   const planRows = state.plan.map((row, idx) => `
     <tr data-row-id="${row.id}">
-      <td style="min-width:60px;"><input type="text" data-bind="plan.${idx}.week" value="${escapeHtml(row.week)}" style="width:52px;text-align:center;"></td>
-      <td style="min-width:220px;">${rteHTML('plan.'+idx+'.topics', row.topics, 'Topics covered this week…')}</td>
-      <td style="min-width:220px;">${rteHTML('plan.'+idx+'.activity', row.activity, 'Suggested activity & teaching strategy…')}</td>
-      <td style="min-width:170px;">${ddCheckHTML('assess-'+row.id, availableTools, row.assessment, [], 'togglePlanAssessment', {rowId:row.id}, {allowCustom:false})}</td>
-      <td style="min-width:150px;">${ddCheckHTML('cos-'+row.id, state.cos.map(c=>({code:c.label,label:''})), row.cos, [], 'togglePlanCO', {rowId:row.id}, {allowCustom:false})}</td>
+      <td><input type="text" data-bind="plan.${idx}.week" value="${escapeHtml(row.week)}" style="width:100%;text-align:center;"></td>
+      <td>${rteHTML('plan.'+idx+'.topics', row.topics, 'Topics covered this week…')}</td>
+      <td>${rteHTML('plan.'+idx+'.activity', row.activity, 'Suggested activity & teaching strategy…')}</td>
+      <td>${ddCheckHTML('assess-'+row.id, availableTools, row.assessment, [], 'togglePlanAssessment', {rowId:row.id}, {allowCustom:false})}</td>
+      <td>${ddCheckHTML('cos-'+row.id, state.cos.map(c=>({code:c.label,label:''})), row.cos, [], 'togglePlanCO', {rowId:row.id}, {allowCustom:false})}</td>
       <td>${state.plan.length>1?`<button type="button" class="btn btn-ghost btn-sm" data-action="removePlanRow" data-row-id="${row.id}">Remove</button>`:''}</td>
     </tr>`).join('');
 
@@ -475,7 +471,8 @@ function renderTeachingPanel(){
     <div class="card">
       <div class="card-title"><span class="num">18</span> Course Plan</div>
       <div class="table-scroll">
-        <table class="obe-table">
+        <table class="obe-table plan-table">
+          <colgroup><col style="width:7%"><col style="width:31%"><col style="width:31%"><col style="width:14%"><col style="width:11%"><col style="width:6%"></colgroup>
           <thead><tr><th>Week</th><th>Topics</th><th>Suggested Activity &amp; Teaching Strategy</th><th>Assessment Strategy</th><th>Corresponding COs</th><th></th></tr></thead>
           <tbody>${planRows}</tbody>
         </table>
@@ -495,22 +492,13 @@ const SCHEDULE_OPTIONS = [
   'Regular from Class', 'University Scheduled Midterm', 'University Scheduled Term Final',
 ];
 
-function derivedAssessmentTools(){
-  const map = new Map(); // code -> label
-  state.cos.forEach(co=>{
-    co.at.forEach(code=>{
-      const def = AT_ALL.find(a=>a.code===code);
-      map.set(code, def? def.label : code);
-    });
-    co.atCustom.forEach(c=>{
-      map.set(c, c);
-    });
-  });
-  const tools = [...map.entries()].map(([code,label])=>({code,label}));
-  // Final Exam, if present, always goes last (see renderAssessmentPanel / exports for its special "Final Exam (FE)" label)
-  const feIdx = tools.findIndex(t=>t.code==='F');
-  if(feIdx>-1) tools.push(tools.splice(feIdx,1)[0]);
-  return tools;
+function assessmentTotalHTML(total){
+  const ok = Math.round(total) === 100;
+  return `<span class="total-badge ${ok?'ok':'bad'}">${Math.round(total)}%</span> ${!ok?'<span class="hint warn"> should equal 100%</span>':''}`;
+}
+function updateAssessmentTotalUI(){
+  const cell = document.getElementById('assessmentTotalCell');
+  if(cell) cell.innerHTML = assessmentTotalHTML(computeAssessmentTotal());
 }
 
 function renderAssessmentPanel(){
@@ -521,15 +509,14 @@ function renderAssessmentPanel(){
     const n = parseFloat(v);
     return isFinite(n) ? n : 0;
   };
-  let total = pct(state.assessment.attendanceMarks);
   const toolRows = tools.map(t=>{
     const val = state.assessment.rowMarks[t.code] || '';
-    total += pct(val);
     const isFE = t.code==='F';
     return `<tr><td>${isFE? 'Final Exam (FE)' : 'Continuous Internal Assessment (CIA)'}</td><td>${isFE? '' : `${escapeHtml(t.label)} <span class="hint">(${escapeHtml(t.code)})</span>`}</td>
       <td><input type="text" placeholder="e.g., 10% — leave empty if unused" data-bind-mark="${escapeHtml(t.code)}" value="${escapeHtml(val)}" style="width:100%;"></td></tr>`;
   }).join('') || `<tr><td colspan="3" class="hint">No assessment tools have been selected yet in Part B (Course Outcomes) — add some there first.</td></tr>`;
 
+  const total = computeAssessmentTotal();
   const totalOk = Math.round(total) === 100;
 
   const scheduleRows = tools.map((t, ti) => {
@@ -557,7 +544,7 @@ function renderAssessmentPanel(){
           <tbody>
             <tr><td colspan="2">Attendance</td><td><input type="text" placeholder="e.g., 10% — leave empty if unused" data-bind-mark="attendance" value="${escapeHtml(state.assessment.attendanceMarks)}" style="width:100%;"></td></tr>
             ${toolRows}
-            <tr class="total-row"><td colspan="2">Total</td><td><span class="total-badge ${totalOk?'ok':'bad'}">${Math.round(total)}%</span> ${!totalOk?'<span class="hint warn"> should equal 100%</span>':''}</td></tr>
+            <tr class="total-row"><td colspan="2">Total</td><td id="assessmentTotalCell">${assessmentTotalHTML(total)}</td></tr>
           </tbody>
         </table>
       </div>
@@ -578,7 +565,6 @@ function renderAssessmentPanel(){
       <div class="card-title"><span class="num">20</span> Assessment Pattern — Continuous Internal Evaluation (100 Marks)</div>
       <p class="hint" style="margin-bottom:12px;">The percentage distribution of Bloom's categories in the assessment tools may vary by ±5%. Leave a cell empty if that evaluation method is not used for this course.</p>
       ${renderBloomTable()}
-      <button type="button" class="btn" style="margin-top:12px;" data-action="addBloomCol">+ Add Column</button>
     </div>
 
     <div class="card">
@@ -597,13 +583,11 @@ function renderAssessmentPanel(){
 }
 
 function renderBloomTable(){
-  const cols = state.bloomCols;
-  const headers = cols.map(c=>`<th style="min-width:130px;">
-      <input type="text" data-bind-bloomcol="${c.id}" value="${escapeHtml(c.name)}" style="font-size:11px;padding:4px 6px;">
-      <button type="button" class="btn btn-ghost btn-sm" style="color:#fff;" data-action="removeBloomCol" data-row-id="${c.id}" title="Remove column">×</button>
-    </th>`).join('');
+  const cols = patternColumns();
+  if(!cols.length) return `<p class="hint">No assessment components yet — select assessment tools in Part B (Course Outcomes) first. Attendance is never shown here.</p>`;
+  const headers = cols.map(c=>`<th style="min-width:110px;">${escapeHtml(c.label)} <span class="hint" style="color:#fff;">(${escapeHtml(c.code)})</span></th>`).join('');
   const rows = BLOOM_ROWS.map(rowKey=>{
-    const cells = cols.map(c=>`<td><input type="text" placeholder="—" data-bind-bloomval="${c.id}" data-bloomrow="${rowKey}" value="${escapeHtml(c.values[rowKey]||'')}" style="width:100%;text-align:center;"></td>`).join('');
+    const cells = cols.map(c=>`<td><input type="text" placeholder="—" data-bind-pattern="${escapeHtml(c.code)}" data-bloomrow="${rowKey}" value="${escapeHtml((state.patternValues[c.code]||{})[rowKey]||'')}" style="width:100%;text-align:center;"></td>`).join('');
     return `<tr><td><strong>${rowKey}</strong></td>${cells}</tr>`;
   }).join('');
   return `<div class="table-scroll"><table class="obe-table">
