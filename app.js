@@ -1,3 +1,5 @@
+const FIX_ABBR = new Set(['e.g','i.e','vs','etc','cf','fig','eq','approx']);
+const FIX_INPUT_BINDS = /^(objectives\.|meta\.courseTitle$|teachers\.\d+\.(name|designation|specialization)$|additional\.)/;
 /* =====================================================================
    APP — wiring, event delegation, completion tracking, init
    ===================================================================== */
@@ -14,8 +16,8 @@ const PANEL_RENDERERS = {
 let activeTab = 'info';
 let openDD = null; // id of currently open dropdown-checkbox panel, if any
 
-function renderPanel(id){ PANEL_RENDERERS[id](); reopenDD(); autosizeAll(); }
-function renderAll(){ Object.keys(PANEL_RENDERERS).forEach(id => PANEL_RENDERERS[id]()); reopenDD(); autosizeAll(); }
+function renderPanel(id){ PANEL_RENDERERS[id](); reopenDD(); autosizeAll(); decorateTextboxes(); }
+function renderAll(){ Object.keys(PANEL_RENDERERS).forEach(id => PANEL_RENDERERS[id]()); reopenDD(); autosizeAll(); decorateTextboxes(); }
 
 /* ---------- floating dropdown-checkbox portal ----------
    A single shared panel is appended to <body> and positioned with
@@ -482,7 +484,8 @@ document.getElementById('fileLoadJson').addEventListener('change', (e)=>{
 });
 
 document.getElementById('btnDownloadJson').addEventListener('click', ()=>{
-  const name = (state.meta.courseCode || 'course-outline').replace(/[^a-z0-9]+/gi,'-').toLowerCase();
+  const clean = (v)=> String(v||'').replace(/[\\/:*?"<>|]+/g,' ').replace(/\s+/g,' ').trim();
+  const name = [clean(state.meta.courseCode), clean(state.meta.courseTitle)].filter(Boolean).join(' - ') || 'course-outline';
   download(name+'.json', JSON.stringify(state, null, 2), 'application/json');
   toast('JSON downloaded');
 });
@@ -559,3 +562,87 @@ document.querySelectorAll('.panel').forEach(p=> p.classList.toggle('active', p.d
 updateProgressUI();
 document.getElementById('aboutDeveloper').textContent = 'Developed by '+APP_DEVELOPER;
 document.getElementById('aboutVersion').textContent = 'Version '+APP_VERSION;
+
+
+/* ---------- Fix formatting (per textbox) ---------- */
+
+function fixPunct(s){
+  const src0 = s.replace(/ +([,;:!?.])(?=\s|$|[A-Za-z])/g,'$1');
+  const src = src0.split(' ').map(tok=> /:\/\/|@|^www\./i.test(tok) ? tok :
+      tok.replace(/([,;:!?])(?=[A-Za-z])/g,'$1 ').replace(/([a-z0-9)])\.(?=[A-Z][a-z])/g,'$1. ')).join(' ').replace(/ {2,}/g,' ');
+  return src.replace(/\.(\s+)((?:\*\*|["'(\[])?)([a-z])/g,(m,sp,pre,ch,off)=>{
+    const b = src.slice(0,off).match(/(\S+)$/);
+    const w = b ? b[1].toLowerCase().replace(/^[^a-z]+/,'') : '';
+    return FIX_ABBR.has(w) ? m : '.'+sp+pre+ch.toUpperCase();
+  });
+}
+function fixText(str){
+  return fixPunct(String(str==null?'':str).replace(/\s+/g,' ').trim());
+}
+function fixRte(body){
+  body.querySelectorAll('br').forEach(br=> br.replaceWith(document.createTextNode(' ')));
+  if(!body.querySelector('ul,ol')){
+    body.querySelectorAll('div,p').forEach(el=>{
+      el.before(document.createTextNode(' '));
+      while(el.firstChild) el.before(el.firstChild);
+      el.remove();
+    });
+  }
+  body.normalize();
+  const nodes = [];
+  const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+  while(walker.nextNode()) nodes.push(walker.currentNode);
+  let tail = '';
+  nodes.forEach(n=>{
+    let t = n.nodeValue.replace(/\s+/g,' ');
+    if(tail==='' || tail.endsWith(' ')) t = t.replace(/^ /,'');
+    t = fixPunct(t);
+    const m = tail.match(/(\S+)\.\s*$/);
+    if(m && !FIX_ABBR.has(m[1].toLowerCase().replace(/^[^a-z]+/,'')) && /^[a-z]/.test(t.replace(/^(\*\*|["'(\[])/,''))){
+      t = t.replace(/[a-z]/, c=>c.toUpperCase());
+    }
+    n.nodeValue = t;
+    tail = (tail+t).slice(-40);
+  });
+  for(let i=nodes.length-1;i>=0;i--){
+    nodes[i].nodeValue = nodes[i].nodeValue.replace(/\s+$/,'');
+    if(nodes[i].nodeValue) break;
+  }
+}
+
+function decorateTextboxes(){
+  const mk = (rte)=>{
+    const b = document.createElement('button');
+    b.type='button'; b.className='fmt-btn'; b.tabIndex=-1;
+    b.dataset.fixFmt = rte ? 'rte' : 'field';
+    b.title='Fix formatting (remove line breaks, extra spaces; fix spacing after punctuation; capitalize after periods)';
+    b.textContent='Aa✓';
+    return b;
+  };
+  document.querySelectorAll('.rte-toolbar').forEach(tb=>{
+    if(!tb.querySelector('[data-fix-fmt]')) tb.appendChild(mk(true));
+  });
+  document.querySelectorAll('textarea, input[type=text][data-bind]').forEach(el=>{
+    if(el.parentElement.classList.contains('fmt-wrap')) return;
+    if(el.tagName==='INPUT' && !FIX_INPUT_BINDS.test(el.dataset.bind||'')) return;
+    const w = document.createElement('div');
+    w.className='fmt-wrap';
+    if(el.style.flex) w.style.flex = el.style.flex;
+    el.before(w); w.appendChild(el); w.appendChild(mk(false));
+  });
+}
+
+document.addEventListener('click', (e)=>{
+  const b = e.target.closest('[data-fix-fmt]');
+  if(!b) return;
+  if(b.dataset.fixFmt==='rte'){
+    const body = b.closest('[data-rte-wrap]').querySelector('.rte-body');
+    fixRte(body);
+    body.dispatchEvent(new Event('input',{bubbles:true}));
+  } else {
+    const el = b.parentElement.querySelector('input,textarea');
+    el.value = fixText(el.value);
+    el.dispatchEvent(new Event('input',{bubbles:true}));
+  }
+  toast('Formatting fixed');
+});

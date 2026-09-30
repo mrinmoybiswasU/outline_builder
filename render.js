@@ -395,7 +395,7 @@ function renderSkillPanel(){
       </div>
       <div class="table-scroll">
         <table class="obe-table co-table">
-          <colgroup><col style="width:5%"><col style="width:22%"><col style="width:9%"><col style="width:10%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:10%"><col style="width:10%"><col style="width:7%"></colgroup>
+          <colgroup><col style="width:40px"><col style="width:240px"><col style="width:80px"><col style="width:76px"><col style="width:68px"><col style="width:68px"><col style="width:68px"><col style="width:76px"><col style="width:76px"><col style="width:64px"></colgroup>
           <thead><tr>
             <th>No.</th><th>COs</th>
             <th>PO ${helpButtonHTML('po','Programme Outcomes (PO1–PO12)')}</th>
