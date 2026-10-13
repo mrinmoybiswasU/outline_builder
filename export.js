@@ -723,6 +723,6 @@ async function exportPdfFile(){
     doc.text(String(i), pageW()-MARGIN, pageH()-MARGIN+20, {align:'right'});
   }
 
-  const name = (state.meta.courseCode || 'course-outline').replace(/[^a-z0-9]+/gi,'-').toLowerCase();
+  const name = `${(state.meta.courseCode || 'course-outline').replace(/[^a-z0-9]+/gi, '-').toLowerCase()} - ${(state.meta.courseTitle || 'course-outline').replace(/[^a-z0-9]+/gi, '-')}`;
   doc.save(name+'.pdf');
 }
