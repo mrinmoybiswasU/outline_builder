@@ -418,38 +418,35 @@ async function exportPdfFile(){
     }
   }
   function pdfTitle(text){
-    doc.setFont(FONT,'bold'); doc.setFontSize(16); doc.setTextColor(17,17,17);
+    doc.setFont(FONT,'bold'); doc.setFontSize(SIZE); doc.setTextColor(0);
     const lines = doc.splitTextToSize(text, contentW());
-    const lh = 16*1.5;
+    const lh = LH;
     ensure(lines.length*lh);
     lines.forEach((line,i)=> doc.text(line, pageW()/2, y+i*lh+12, {align:'center'}));
     y += lines.length*lh + 6;
   }
   function pdfSubtitle(text){
-    doc.setFont(FONT,'normal'); doc.setFontSize(SIZE); doc.setTextColor(85,85,85);
+    doc.setFont(FONT,'normal'); doc.setFontSize(SIZE); doc.setTextColor(0);
     const lines = doc.splitTextToSize(text, contentW());
     ensure(lines.length*LH);
     lines.forEach((line,i)=> doc.text(line, pageW()/2, y+i*LH+9, {align:'center'}));
     y += lines.length*LH;
-    doc.setTextColor(17,17,17);
   }
   function pdfH2(text){
     y += 6;
-    ensure(LH+10);
-    doc.setFont(FONT,'bold'); doc.setFontSize(SIZE); doc.setTextColor(13,31,54);
+    ensure(LH*4); // keep the heading together with the content that follows it
+    doc.setFont(FONT,'bold'); doc.setFontSize(SIZE); doc.setTextColor(0);
     doc.text(text, MARGIN, y+9);
     y += LH;
-    doc.setDrawColor(13,31,54); doc.setLineWidth(1);
+    doc.setDrawColor(0); doc.setLineWidth(1);
     doc.line(MARGIN, y, MARGIN+contentW(), y);
     y += 8;
-    doc.setTextColor(17,17,17);
   }
   function pdfH3(text){
-    ensure(LH+6);
-    doc.setFont(FONT,'bold'); doc.setFontSize(SIZE); doc.setTextColor(23,56,97);
+    ensure(LH*3); // keep the heading together with the content that follows it
+    doc.setFont(FONT,'bolditalic'); doc.setFontSize(SIZE); doc.setTextColor(0);
     doc.text(text, MARGIN, y+9);
     y += LH;
-    doc.setTextColor(17,17,17);
   }
   // Renders `text` justified on every line except the last, letting jsPDF do
   // its own wrapping in a single call — this matters: calling doc.text() once
@@ -457,19 +454,26 @@ async function exportPdfFile(){
   // its own "last line" of a one-line call, so none of them ever justify.
   // Passing the whole paragraph + maxWidth in one call is what actually works,
   // and it also mirrors exactly what autoTable itself does for halign:'justify'.
+  // Justification is only safe when no single word is a big fraction of the line:
+  // a wrapped line holding one unbreakable word (a URL, say) has no gaps to
+  // stretch, and jsPDF then writes an `Infinity` word-spacing operator that
+  // corrupts the rest of the page's text. Such text is left-aligned instead.
+  function canJustify(text, w){
+    return String(text).split(/\s+/).every(word => doc.getTextWidth(word) <= w*0.5);
+  }
   function justifiedBlock(text, x, w, size){
     doc.setFont(FONT,'normal'); doc.setFontSize(size);
     const raw = text || '—';
     const lines = doc.splitTextToSize(raw, w);
     const lh = size*1.5;
-    doc.text(raw, x, y+size*0.78, {maxWidth:w, align:'justify'});
+    doc.text(raw, x, y+size*0.78, {maxWidth:w, align: canJustify(raw,w) ? 'justify' : 'left'});
     return lines.length*lh;
   }
   // Paragraphs normally fit in a single ensure()+draw. On the rare chance one
   // is taller than a full page, it's chunked across pages instead of letting
   // it run off the bottom — matches the same "never overflow" rule as tables.
   function pdfParagraph(text){
-    doc.setFont(FONT,'normal'); doc.setFontSize(SIZE); doc.setTextColor(17,17,17);
+    doc.setFont(FONT,'normal'); doc.setFontSize(SIZE); doc.setTextColor(0);
     const raw = text || '—';
     const allLines = doc.splitTextToSize(raw, contentW());
     const totalH = allLines.length*LH;
@@ -485,7 +489,7 @@ async function exportPdfFile(){
         const availH = pageH()-MARGIN-FOOTER_RESERVE-y;
         const linesThatFit = Math.max(1, Math.floor(availH/LH));
         const chunk = allLines.slice(idx, idx+linesThatFit);
-        doc.text(chunk, MARGIN, y+SIZE*0.78, {maxWidth:contentW(), align:'justify'});
+        doc.text(chunk, MARGIN, y+SIZE*0.78, {maxWidth:contentW(), align: canJustify(raw,contentW()) ? 'justify' : 'left'});
         y += chunk.length*LH;
         idx += chunk.length;
         if(idx < allLines.length){ doc.addPage(); y = MARGIN; }
@@ -493,15 +497,19 @@ async function exportPdfFile(){
       y += 6;
     }
   }
-  function pdfBulletList(items){
-    doc.setFont(FONT,'normal'); doc.setFontSize(SIZE); doc.setTextColor(17,17,17);
-    (items.length?items:['—']).forEach(text=>{
-      const w = contentW()-16;
+  // marker(i) -> label drawn at the margin (e.g. "1."), or null for no marker at
+  // all (references are shown exactly as supplied). Wrapped lines hang under the text.
+  function pdfList(items, marker){
+    doc.setFont(FONT,'normal'); doc.setFontSize(SIZE); doc.setTextColor(0);
+    const indent = marker ? 24 : 0;
+    (items.length?items:['—']).forEach((text,i)=>{
+      const w = contentW()-indent;
+      doc.setFont(FONT,'normal'); doc.setFontSize(SIZE);
       const lines = doc.splitTextToSize(text, w);
       const totalH = lines.length*LH;
       ensure(totalH);
-      doc.text('•', MARGIN, y+SIZE*0.78);
-      justifiedBlock(text, MARGIN+16, w, SIZE);
+      if(marker) doc.text(marker(i), MARGIN, y+SIZE*0.78);
+      justifiedBlock(text, MARGIN+indent, w, SIZE);
       y += totalH;
     });
     y += 6;
@@ -512,7 +520,7 @@ async function exportPdfFile(){
   // the value directly beneath, rather than cramming a near-zero-width value
   // into whatever space happens to be left.
   function pdfKV(label, value){
-    doc.setFont(FONT,'bold'); doc.setFontSize(SIZE); doc.setTextColor(17,17,17);
+    doc.setFont(FONT,'bold'); doc.setFontSize(SIZE); doc.setTextColor(0);
     const labelText = label+': ';
     const labelW = doc.getTextWidth(labelText);
     const inline = labelW <= contentW()*0.42;
@@ -538,56 +546,56 @@ async function exportPdfFile(){
       y += valueLines.length*LH;
     }
   }
-  // Groups consecutive bulleted/numbered blocks into one hanging-indent list
-  // render (proper bibliography style — wrapped lines align under the text,
-  // not back at the margin), while plain paragraphs render on their own.
-  function pdfBlocks(html){
+  // A reference subsection is hidden when it is empty or just "N/A" / "n/a".
+  function hasRefContent(html){
+    const t = plainText(html).replace(/\u00a0/g,' ').trim();
+    return t !== '' && !/^n\/a\.?$/i.test(t);
+  }
+  // References keep the text exactly as supplied: no bullets or numbers are
+  // added, and wrapped lines hang under the entry.
+  function pdfRefs(title, html){
+    if(!hasRefContent(html)) return;
+    pdfH3(title);
     const blocks = htmlBlocks(html);
-    let i = 0;
-    while(i < blocks.length){
-      if(blocks[i].bullet || blocks[i].ordered){
-        const group = [];
-        while(i<blocks.length && (blocks[i].bullet||blocks[i].ordered)){ group.push(blocks[i].text); i++; }
-        pdfBulletList(group);
-      } else {
-        pdfParagraph(blocks[i].text);
-        i++;
-      }
-    }
+    pdfList(blocks.map(b=>b.text), null);
   }
 
   const TABLE_SIZE = 10;
   // draws a small vector checkmark centered in a cell — the ✓ glyph isn't in
   // the standard PDF Times-Roman character set and renders as a blank box
   function drawCheck(cx, cy){
-    doc.setDrawColor(31,138,95); doc.setLineWidth(1.4);
+    doc.setDrawColor(0); doc.setLineWidth(1.4);
     doc.line(cx-3.6, cy, cx-1.1, cy+2.8);
     doc.line(cx-1.1, cy+2.8, cx+3.8, cy-3.6);
   }
   /* head/body: standard autoTable arrays. opts:
      - columnStyles: per-column autoTable style overrides (cellWidth, halign, …)
-     - justifyCols: column indices whose text should be fully justified (for
-       genuinely paragraph-length cell content, e.g. CO descriptions). This
-       uses autoTable's own built-in halign:'justify' rather than a custom
-       redraw, so the exact same text/width autoTable already used to compute
-       the row's height is what gets justified — no risk of the two disagreeing
-       and text overflowing past the cell/row like a hand-rolled redraw could.
      - checkCols: column indices where the literal string "✓" should be drawn
-       as a vector checkmark instead of relying on the font's glyph */
+       as a vector checkmark instead of relying on the font's glyph
+     Cell text is always left-aligned and wrapped ('linebreak'): row heights are
+     computed from the wrapped text so nothing is clipped, rows that do not fit
+     move to the next page (or split if taller than a page), and the header row
+     repeats on every page. (autoTable's halign:'justify' is deliberately NOT
+     used — it emits Infinity word-spacing on single-word lines and corrupts
+     the cell text.) */
   function pdfTable(head, body, opts){
     opts = opts || {};
-    ensure(LH*2);
+    ensure(LH*4);
     const columnStyles = {};
     Object.entries(opts.columnStyles||{}).forEach(([k,v])=>{ columnStyles[k] = {...v}; });
-    (opts.justifyCols||[]).forEach(ci=>{
-      columnStyles[ci] = {...(columnStyles[ci]||{}), halign:'justify'};
-    });
+    // autoTable sizes every row assuming a 1.15 line height, but text is drawn with
+    // the document's line-height factor (1.5 for body text). Left at 1.5 the text
+    // is taller than the row it was measured for and spills out of its cell, and
+    // split rows overlap what follows. So tables are drawn at autoTable's own 1.15.
+    const bodyLineFactor = (typeof doc.getLineHeightFactor === 'function') ? doc.getLineHeightFactor() : 1.5;
+    doc.setLineHeightFactor(1.15);
     doc.autoTable({
       head:[head], body, startY:y,
-      margin:{left:MARGIN, right:MARGIN, bottom:MARGIN+FOOTER_RESERVE},
-      styles:{font:FONT, fontSize:TABLE_SIZE, cellPadding:4, lineColor:[150,150,150], lineWidth:0.5, valign:'top', textColor:[17,17,17], overflow:'linebreak'},
-      headStyles:{fillColor:[13,31,54], textColor:255, fontStyle:'bold', fontSize:TABLE_SIZE, halign:'left'},
-      alternateRowStyles:{fillColor:[251,252,254]},
+      margin:{top:MARGIN, left:MARGIN, right:MARGIN, bottom:MARGIN+FOOTER_RESERVE},
+      showHead:'everyPage', rowPageBreak:'auto',
+      styles:{font:FONT, fontSize:TABLE_SIZE, cellPadding:4, lineColor:[0,0,0], lineWidth:0.5, valign:'top', halign:'left', textColor:[0,0,0], fillColor:[255,255,255], overflow:'linebreak'},
+      headStyles:{fillColor:[255,255,255], textColor:[0,0,0], fontStyle:'bold', fontSize:TABLE_SIZE, halign:'left'},
+      alternateRowStyles:{fillColor:[255,255,255]},
       columnStyles,
       theme:'grid',
       willDrawCell:(data)=>{
@@ -602,14 +610,18 @@ async function exportPdfFile(){
         }
       },
     });
+    doc.setLineHeightFactor(bodyLineFactor);
     y = doc.lastAutoTable.finalY + 12;
   }
 
   /* PDF-only display helpers: a "no CP/WP"/"no CA/EA" outcome shows as a
      plain dash in the printed table, rather than the descriptive label used
      in the app and the Word export. */
-  function cpwpCell(co){ return co.cpwp.includes('NoCEP') ? '-' : (co.cpwp.join(', ')||'-'); }
-  function caeaCell(co){ return co.caea.includes('NoCAEA') ? '-' : (co.caea.join(', ')||'-'); }
+  const isNoStatus = v => v==='NoCEP' || v==='NoCAEA' || /^no\s*c[pa](\/(wp|ea))?$/i.test(String(v).trim());
+  function cpwpCell(co){ return co.cpwp.some(isNoStatus) ? '-' : (co.cpwp.join(', ')||'-'); }
+  function caeaCell(co){ return co.caea.some(isNoStatus) ? '-' : (co.caea.join(', ')||'-'); }
+  // blank / whitespace-only -> '-'; any real value (including "0") is kept as is
+  const dashIfBlank = v => (v==null || String(v).replace(/\u00a0/g,' ').trim()==='') ? '-' : v;
 
   /* ---------- content ---------- */
   const m = state.meta;
@@ -633,16 +645,16 @@ async function exportPdfFile(){
   pdfH3('Rationale of the Course');
   pdfParagraph(state.rationale);
   pdfH3('Course Objectives');
-  pdfBulletList(state.objectives.filter(o=>o.trim()));
+  pdfList(state.objectives.filter(o=>o.trim()), i => (i+1)+'.');
 
   pdfH2('Part B: Skill Mapping');
   pdfH3('Course Outcomes (COs)');
   pdfTable(
     ['No.','COs','BT','CP/WP','CA/EA','KP/WK','AT','DM&A'],
     state.cos.map(co=>[co.label, co.text||'—', co.bt.join(', ')||'-', cpwpCell(co), caeaCell(co), co.kpwk.join(', ')||'-', coAtLabel(co), coDmaLabel(co)]),
-    { justifyCols:[1,7], columnStyles:{
-        0:{cellWidth:24}, 1:{cellWidth:132}, 2:{cellWidth:52}, 3:{cellWidth:44},
-        4:{cellWidth:44}, 5:{cellWidth:42}, 6:{cellWidth:48}, 7:{cellWidth:'auto'},
+    { columnStyles:{
+        0:{cellWidth:36}, 1:{cellWidth:'auto'}, 2:{cellWidth:44}, 3:{cellWidth:40},
+        4:{cellWidth:40}, 5:{cellWidth:44}, 6:{cellWidth:48}, 7:{cellWidth:60},
     }}
   );
   pdfParagraph("COs– Course Outcome; BT– Learning Domain Level (Cognitive/Affective/Psychomotor); CP/WP– Complex Engineering Problems; CA/EA– Complex Engineering Activities; AT– Assessment Tools; KP/WK– Knowledge Profile; DM&A– Delivery Methods & Activities.");
@@ -667,8 +679,8 @@ async function exportPdfFile(){
   pdfKV('Last Class of Semester', fmtDate(state.semesterEnd));
   pdfTable(
     ['Week','Topics','Suggested Activity & Teaching Strategy','Assessment Strategy','Corresponding COs'],
-    state.plan.map(r=>[r.week, plainText(r.topics)||'—', plainText(r.activity)||'—', planAssessLabel(r), planCoLabel(r)]),
-    { justifyCols:[1,2], columnStyles:{0:{cellWidth:32}, 1:{cellWidth:150}, 2:{cellWidth:150}, 3:{cellWidth:60}, 4:{cellWidth:'auto'}} }
+    state.plan.map(r=>[dashIfBlank(r.week), dashIfBlank(plainText(r.topics)), dashIfBlank(plainText(r.activity)), dashIfBlank(joinNonEmpty(r.assessment, ', ')), dashIfBlank(joinNonEmpty(r.cos, ', '))]),
+    { columnStyles:{0:{cellWidth:36}, 1:{cellWidth:'auto'}, 2:{cellWidth:130}, 3:{cellWidth:66}, 4:{cellWidth:76}} }
   );
 
   pdfH2('Part D: Assessment Approach');
@@ -695,10 +707,10 @@ async function exportPdfFile(){
   pdfTable(['Numerical Grade','Letter Grade','Grade Point'], GRADING_TABLE.map(r=>[r[0],r[1],r[2]]));
 
   pdfH2('Part E: References');
-  pdfH3('Recommended Readings'); pdfBlocks(state.references.recommended);
-  pdfH3('Supplementary Readings — Text Book'); pdfBlocks(state.references.textbooks);
-  pdfH3('Supplementary Readings — Others'); pdfBlocks(state.references.others);
-  pdfH3('Others'); pdfBlocks(state.references.othersDiscipline);
+  pdfRefs('Recommended Readings', state.references.recommended);
+  pdfRefs('Supplementary Readings — Text Book', state.references.textbooks);
+  pdfRefs('Supplementary Readings — Others', state.references.others);
+  pdfRefs('Others', state.references.othersDiscipline);
 
   pdfH2('Part F: Additional Information');
   ADDITIONAL_FIELDS.forEach(f => pdfKV(f.label, state.additional[f.key]));
@@ -707,7 +719,7 @@ async function exportPdfFile(){
   const pageCount = doc.getNumberOfPages();
   for(let i=1;i<=pageCount;i++){
     doc.setPage(i);
-    doc.setFont(FONT,'normal'); doc.setFontSize(9); doc.setTextColor(85,85,85);
+    doc.setFont(FONT,'normal'); doc.setFontSize(SIZE); doc.setTextColor(0);
     doc.text(String(i), pageW()-MARGIN, pageH()-MARGIN+20, {align:'right'});
   }
 
