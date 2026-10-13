@@ -308,13 +308,13 @@ function defaultState(){
 }
 
 const GRADING_TABLE = [
-  ['80% and above',            'A + (A plus)',   '4.00'],
+  ['80% and above',            'A+ (A plus)',   '4.00'],
   ['75% to less than 80%',     'A (A regular)',  '3.75'],
-  ['70% to less than 75%',     'A − (A minus)',  '3.50'],
-  ['65% to less than 70%',     'B + (B plus)',   '3.25'],
+  ['70% to less than 75%',     'A- (A minus)',  '3.50'],
+  ['65% to less than 70%',     'B+ (B plus)',   '3.25'],
   ['60% to less than 65%',     'B (B regular)',  '3.00'],
-  ['55% to less than 60%',     'B − (B minus)',  '2.75'],
-  ['50% to less than 55%',     'C + (C plus)',   '2.50'],
+  ['55% to less than 60%',     'B- (B minus)',  '2.75'],
+  ['50% to less than 55%',     'C+ (C plus)',   '2.50'],
   ['45% to less than 50%',     'C (C regular)',  '2.25'],
   ['40% to less than 45%',     'D',              '2.00'],
   ['Less than 40%',            'F',              '0.00'],
