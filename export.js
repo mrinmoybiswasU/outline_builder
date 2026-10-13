@@ -551,13 +551,13 @@ async function exportPdfFile(){
     const t = plainText(html).replace(/\u00a0/g,' ').trim();
     return t !== '' && !/^n\/a\.?$/i.test(t);
   }
-  // References keep the text exactly as supplied: no bullets or numbers are
-  // added, and wrapped lines hang under the entry.
+  // References are numbered 1., 2., 3. per subsection. A number the entry already
+  // starts with ("1.", "2)" etc.) is stripped first so it is never doubled.
   function pdfRefs(title, html){
     if(!hasRefContent(html)) return;
     pdfH3(title);
     const blocks = htmlBlocks(html);
-    pdfList(blocks.map(b=>b.text), null);
+    pdfList(blocks.map(b=>b.text.replace(/^\s*\d+\s*[.)]\s*/, '')), i => (i+1)+'.');
   }
 
   const TABLE_SIZE = 10;
